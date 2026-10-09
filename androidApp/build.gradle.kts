@@ -5,6 +5,12 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+val versione = providers.gradleProperty("versionName").getOrElse("0.1.0")
+val codiceVersione = versione.substringBefore('-').split('.').map { it.toInt() }
+    .let { (major, minor, patch) -> major * 10_000 + minor * 100 + patch }
+
+val keystoreRilascio = providers.environmentVariable("AULA_KEYSTORE_PATH").orNull
+
 android {
     namespace = "it.aula.android"
     compileSdk = libs.versions.androidCompileSdk.get().toInt()
@@ -13,16 +19,27 @@ android {
         applicationId = "it.aula.android"
         minSdk = libs.versions.androidMinSdk.get().toInt()
         targetSdk = libs.versions.androidTargetSdk.get().toInt()
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = codiceVersione
+        versionName = versione
+    }
+
+    signingConfigs {
+        if (keystoreRilascio != null) {
+            create("rilascio") {
+                storeFile = file(keystoreRilascio)
+                storePassword = providers.environmentVariable("AULA_KEYSTORE_PASSWORD").get()
+                keyAlias = providers.environmentVariable("AULA_KEY_ALIAS").get()
+                keyPassword = providers.environmentVariable("AULA_KEY_PASSWORD").get()
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Firmata con il keystore di debug: installabile per prove, non pubblicabile sul Play Store.
-            signingConfig = signingConfigs.getByName("debug")
+            // In locale, senza keystore di rilascio, si firma con quello di debug: installabile per prove.
+            signingConfig = signingConfigs.findByName("rilascio") ?: signingConfigs.getByName("debug")
         }
     }
     compileOptions {

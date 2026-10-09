@@ -1,0 +1,84 @@
+# Pubblica l'APK Android firmato come GitHub Release.
+#
+# Si avvia con il push di un tag di versione:
+#   git tag v1.0.0 && git push origin v1.0.0
+# Un tag con suffisso (v1.1.0-beta1) diventa una pre-release.
+#
+name: Release Android
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Versione dal tag
+        id: versione
+        run: |
+          versione="${GITHUB_REF_NAME#v}"
+          if ! [[ "$versione" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::Il tag '$GITHUB_REF_NAME' non è nella forma vX.Y.Z o vX.Y.Z-suffisso"
+            exit 1
+          fi
+          echo "nome=$versione" >> "$GITHUB_OUTPUT"
+          [[ "$versione" == *-* ]] && echo "prerelease=--prerelease" >> "$GITHUB_OUTPUT" || true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Keystore di rilascio
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::Manca il secret ANDROID_KEYSTORE_BASE64: l'APK non verrebbe firmato con la chiave di rilascio"
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/rilascio.jks"
+
+      - name: Build APK
+        env:
+          AULA_KEYSTORE_PATH: ${{ runner.temp }}/rilascio.jks
+          AULA_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          AULA_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          AULA_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew :androidApp:assembleRelease -PversionName=${{ steps.versione.outputs.nome }}
+
+      - name: Verifica firma
+        run: |
+          apk=androidApp/build/outputs/apk/release/androidApp-release.apk
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
+          "$apksigner" verify --print-certs "$apk" | tee firma.txt
+          if grep -q "CN=Android Debug" firma.txt; then
+            echo "::error::APK firmato con il keystore di debug"
+            exit 1
+          fi
+          cp "$apk" "InAula-${{ steps.versione.outputs.nome }}.apk"
+
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "InAula-${{ steps.versione.outputs.nome }}.apk" \
+            --title "In Aula ${{ steps.versione.outputs.nome }}" \
+            --generate-notes ${{ steps.versione.outputs.prerelease }}
+
+      - name: Rimuovi keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/rilascio.jks"

@@ -7,3 +7,6 @@ local.properties
 .DS_Store
 iosApp/Aula.xcodeproj/
 xcuserdata/
+
+*.jks
+*.keystore
