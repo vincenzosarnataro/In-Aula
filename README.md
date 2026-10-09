@@ -7,7 +7,8 @@
 **Cosa succede davvero in Parlamento, voto per voto.**
 
 App Kotlin Multiplatform che racconta l'attività di Camera e Senato a partire dai loro open data:
-sedute, votazioni, come ha votato ogni gruppo e ogni parlamentare, presenze e cambi di casacca.
+sedute, votazioni, come ha votato ogni gruppo e ogni parlamentare, composizione dei gruppi,
+presenze e cambi di casacca.
 
 [![Ultima release](https://img.shields.io/github/v/release/vincenzosarnataro/In-Aula?sort=semver&display_name=tag&label=release&logo=android&logoColor=white&color=285EA7)](https://github.com/vincenzosarnataro/In-Aula/releases/latest)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.4-7F52FF?logo=kotlin&logoColor=white)
@@ -16,7 +17,7 @@ sedute, votazioni, come ha votato ogni gruppo e ogni parlamentare, presenze e ca
 ![SwiftUI](https://img.shields.io/badge/SwiftUI-iOS-F05138?logo=swift&logoColor=white)
 ![Dati](https://img.shields.io/badge/dati-CC--BY%20Camera%20%26%20Senato-009246)
 
-<img src="docs/media/demo.gif" width="300" alt="Demo dell'app: lista votazioni, emiciclo, gruppi, scheda atto e scheda parlamentare">
+<img src="docs/media/demo.gif" width="300" alt="Demo dell'app: lista votazioni, emiciclo, gruppi, scheda atto, scheda parlamentare e composizione dei gruppi">
 
 <sub>🎬 [Video in qualità piena (MP4)](docs/media/demo.mp4)</sub>
 
@@ -80,6 +81,7 @@ Android e SwiftUI su iOS.
 - **Iter nei due rami**, una lettura dopo l'altra: C. 2822 → S. 1971 → C. 2822-B, con stato e data.
 - **Dettagli**: iniziativa, data di presentazione, primo firmatario e altri firmatari, relatori, temi.
 - **Tutte le votazioni d'Aula sull'atto**, in tutte le sue letture, ciascuna apribile nel dettaglio.
+- **Sito ufficiale**: un tocco apre la pagina dell'atto su camera.it o senato.it.
 
 </td>
 </tr>
@@ -90,12 +92,13 @@ Android e SwiftUI su iOS.
 <table>
 <tr>
 <td width="33%"><img src="docs/media/06-parlamentari.jpg" alt="Elenco dei parlamentari"></td>
-<td width="33%"><img src="docs/media/07-parlamentare.jpg" alt="Scheda di un senatore"></td>
+<td width="33%"><img src="docs/media/07-parlamentare.jpg" alt="Scheda di un deputato con profilo e gruppi"></td>
 <td>
 
-- **Deputati e senatori in carica**, cercabili per nome o gruppo.
+- **Deputati e senatori in carica**, cercabili per nome o gruppo, con la foto ufficiale dei deputati.
 - Filtro **Hanno cambiato gruppo**, per trovare subito chi ha cambiato casacca in questa legislatura.
-- **Scheda personale**: tutti i gruppi di appartenenza con le date di adesione.
+- **Profilo**: luogo e data di nascita, titolo di studio, professione, collegio di elezione e lista.
+- **Scheda personale**: tutti i gruppi di appartenenza con le date di adesione, e il link alla scheda sul sito ufficiale.
 - **Partecipazione al voto** calcolata con la formula Openpolis: presenze, missioni e assenze sulle votazioni della legislatura.
 - **Voti espressi**: quanti favorevoli, contrari e astenuti.
 
@@ -103,6 +106,22 @@ Android e SwiftUI su iOS.
 </tr>
 </table>
 
+### 🏛️ I gruppi parlamentari
+
+<table>
+<tr>
+<td width="33%"><img src="docs/media/11-gruppi.jpg" alt="Composizione della Camera per gruppo, con grafico a ciambella"></td>
+<td width="33%"><img src="docs/media/12-gruppo.jpg" alt="Scheda di un gruppo con seggi e membri"></td>
+<td>
+
+- **Composizione** di Camera e Senato in un grafico a ciambella, con il totale dei seggi al centro.
+- Ogni gruppo ha un **colore fisso**, ispirato al partito e uguale nei due rami e nelle due app.
+- **Seggi e quota** di ogni gruppo, dal più numeroso.
+- **Scheda del gruppo**: i membri in carica e quanti sono arrivati da un altro gruppo in questa legislatura.
+
+</td>
+</tr>
+</table>
 
 ## 🧱 Struttura
 
@@ -123,7 +142,7 @@ flowchart LR
     ST --> I[iOS<br>SwiftUI]
 ```
 
-Nel modulo `shared`, `SparqlClient` gestisce le due fonti con le loro regole. La Camera ogni tanto smette di rispondere per qualche secondo, quindi ogni richiesta viene ritentata fino a cinque volte con backoff esponenziale. Il Senato blocca con un 403 chi fa più di una richiesta ogni due secondi circa, e rifiuta request-URI oltre 2047 byte senza accettare il POST: le richieste al Senato passano quindi da una coda sequenziale con intervallo minimo di due secondi, e ogni query viene compattata e misurata prima dell'invio. `Query.kt` raccoglie le query SPARQL e `ParlamentoRepository` le traduce in modelli di dominio (`Votazione`, `Seduta`, `VotoIndividuale`, `Parlamentare`, `Presenze`). Gli store (`AulaStore`, `VotazioneStore`, `ParlamentariStore`, `ParlamentareStore`) espongono uno `StateFlow` per Compose e un metodo `observe` per SwiftUI, così Swift non deve maneggiare Flow o coroutine.
+Nel modulo `shared`, `SparqlClient` gestisce le due fonti con le loro regole. La Camera ogni tanto smette di rispondere per qualche secondo, quindi ogni richiesta viene ritentata fino a cinque volte con backoff esponenziale. Il Senato blocca con un 403 chi fa più di una richiesta ogni due secondi circa, e rifiuta request-URI oltre 2047 byte senza accettare il POST: le richieste al Senato passano quindi da una coda sequenziale con intervallo minimo di due secondi, e ogni query viene compattata e misurata prima dell'invio. `Query.kt` raccoglie le query SPARQL e `ParlamentoRepository` le traduce in modelli di dominio (`Votazione`, `Seduta`, `VotoIndividuale`, `Parlamentare`, `Presenze`, `GruppoParlamentare`). Gli store (`AulaStore`, `VotazioneStore`, `ParlamentariStore`, `ParlamentareStore`, `GruppiStore`, `SchedaAttoStore`) espongono uno `StateFlow` per Compose e un metodo `observe` per SwiftUI, così Swift non deve maneggiare Flow o coroutine.
 
 Le query non sono inventate: struttura e proprietà sono riprese da [ondata/italianparliament-mcp](https://github.com/ondata/italianparliament-mcp), dove sono state verificate sul campo, comprese le trappole di Virtuoso. Le principali sono queste: le date della Camera sono stringhe `YYYYMMDD` e vanno confrontate dentro `STR()`; i voti della Camera stanno in due named graph e vanno contati con `COUNT(DISTINCT)`; le liste vanno limitate in una subquery prima di agganciare gli `OPTIONAL`.
 
@@ -165,6 +184,8 @@ I test del modulo condiviso si lanciano con `./gradlew :shared:allTests`. Tra le
 - L'endpoint del Senato blocca per qualche minuto (HTTP 403) chi fa troppe richieste ravvicinate, oltre al limite di una ogni 2 secondi.
 - Alla Camera il collegamento ufficiale tra votazione e atto (`ocd:rif_attoCamera`) arriva con mesi di ritardo, e le descrizioni recenti sono sigle provvisorie ("EM 8.1010"). L'app ricava l'atto dal numero citato nella descrizione oppure, per emendamenti e articoli, dalla votazione successiva della stessa seduta che lo cita. Sui dati di gennaio–maggio 2026 la deduzione è giusta nel 95% dei casi, e nell'app l'atto dedotto è segnalato.
 - Al Senato i voti di fiducia non sono collegati al DDL, e la natura del voto (fiducia, voto finale) si deduce dall'etichetta.
+- Le foto dei senatori non si vedono: senato.it le protegge con una verifica anti-bot che solo un browser supera, quindi l'app mostra le iniziali. Il Senato non pubblica nemmeno il titolo di studio.
+- La composizione dei gruppi si ricava dai parlamentari in carica, non da un elenco ufficiale dei gruppi.
 
 
 ## 📄 Fonti dei dati
