@@ -9,6 +9,7 @@
 App Kotlin Multiplatform che racconta l'attività di Camera e Senato a partire dai loro open data:
 sedute, votazioni, come ha votato ogni gruppo e ogni parlamentare, presenze e cambi di casacca.
 
+[![Ultima release](https://img.shields.io/github/v/release/vincenzosarnataro/In-Aula?sort=semver&display_name=tag&label=release&logo=android&logoColor=white&color=285EA7)](https://github.com/vincenzosarnataro/In-Aula/releases/latest)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.4-7F52FF?logo=kotlin&logoColor=white)
 ![Multiplatform](https://img.shields.io/badge/Kotlin%20Multiplatform-Android%20%7C%20iOS-4285F4)
 ![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203%20Expressive-3DDC84?logo=jetpackcompose&logoColor=white)
