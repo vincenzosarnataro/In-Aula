@@ -391,13 +391,18 @@ SELECT DISTINCT ?sen ?gruppo WHERE {
 }
 """
 
-    /** Senza foaf:depiction: le foto del Senato non sono scaricabili dall'app (vedi ParlamentoRepository.parlamentare). */
+    /**
+     * Senza foaf:depiction: le foto del Senato non sono scaricabili dall'app (vedi
+     * ParlamentoRepository.parlamentare). Solo mandati al Senato: gli ex senatori oggi deputati
+     * hanno nella stessa legislatura un mandato alla Camera, che altrimenti li farebbe contare.
+     */
     fun senatoriInCarica(legislatura: Int) = """
 PREFIX osr: <http://dati.senato.it/osr/>
+PREFIX ocd: <http://dati.camera.it/ocd/>
 PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 SELECT DISTINCT ?s ?nome ?cognome WHERE {
   ?s a osr:Senatore ; foaf:firstName ?nome ; foaf:lastName ?cognome ; osr:mandato ?m .
-  ?m osr:legislatura $legislatura .
+  ?m a ocd:mandatoSenato ; osr:legislatura $legislatura .
   OPTIONAL { ?m osr:fine ?fine }
   FILTER(!BOUND(?fine))
 }

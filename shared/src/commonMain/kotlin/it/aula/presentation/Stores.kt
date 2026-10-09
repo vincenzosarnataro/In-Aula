@@ -12,6 +12,7 @@ import it.aula.model.DettaglioVotazione
 import it.aula.model.Disposizione
 import it.aula.model.Emiciclo
 import it.aula.model.Esito
+import it.aula.model.GruppoParlamentare
 import it.aula.model.Parlamentare
 import it.aula.model.Presenze
 import it.aula.model.ProfiloParlamentare
@@ -374,6 +375,67 @@ class ParlamentariStore(private val repo: ParlamentoRepository) :
         }
     }
 }
+
+// ------------------------------------------------------------------ Gruppi parlamentari
+
+data class GruppiState(
+    val ramo: Ramo = Ramo.CAMERA,
+    /** Dal gruppo con più seggi. */
+    val gruppi: List<GruppoParlamentare> = emptyList(),
+    val caricamento: Boolean = false,
+    val errore: String? = null,
+) {
+    val seggiTotali: Int get() = gruppi.firstOrNull()?.seggiTotali ?: 0
+
+    fun gruppo(nome: String): GruppoParlamentare? = gruppi.firstOrNull { it.nome == nome }
+}
+
+class GruppiStore(private val repo: ParlamentoRepository) : Store<GruppiState>(GruppiState()) {
+
+    private var job: Job? = null
+
+    init {
+        carica(forza = false)
+    }
+
+    fun selezionaRamo(ramo: Ramo) {
+        if (ramo == current().ramo) return
+        aggiorna { it.copy(ramo = ramo, gruppi = emptyList(), errore = null) }
+        carica(forza = false)
+    }
+
+    fun ricarica() = carica(forza = true)
+
+    private fun carica(forza: Boolean) {
+        val ramo = current().ramo
+        job?.cancel()
+        job = scope.launch {
+            aggiorna { it.copy(caricamento = true, errore = null) }
+            try {
+                val gruppi = repo.parlamentari(ramo, forza).inGruppi(ramo)
+                aggiorna { if (it.ramo != ramo) it else it.copy(gruppi = gruppi, caricamento = false) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                aggiorna { it.copy(caricamento = false, errore = e.messaggio()) }
+            }
+        }
+    }
+}
+
+/** Raggruppa i parlamentari in carica per gruppo attuale, dal gruppo più numeroso. */
+internal fun List<Parlamentare>.inGruppi(ramo: Ramo): List<GruppoParlamentare> =
+    groupBy { it.gruppo.ifBlank { Testi.senzaGruppo } }
+        .entries
+        .sortedWith(compareByDescending<Map.Entry<String, List<Parlamentare>>> { it.value.size }.thenBy { it.key })
+        .map { (nome, membri) ->
+            GruppoParlamentare(
+                ramo = ramo,
+                nome = nome,
+                membri = membri.sortedWith(compareBy({ it.cognome }, { it.nome })),
+                seggiTotali = size,
+            )
+        }
 
 // ------------------------------------------------------------------ Scheda parlamentare
 

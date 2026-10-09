@@ -40,6 +40,9 @@ class ParlamentoRepository(private val sparql: SparqlClient = SparqlClient()) {
     private val cacheAdesioni = mutableMapOf<Ramo, Map<String, List<Adesione>>>()
     private val cacheProfili = mutableMapOf<String, ProfiloParlamentare>()
 
+    /** Parlamentari e Gruppi chiedono lo stesso elenco all'avvio: lo si carica una volta sola. */
+    private val caricamentoParlamentari = Ramo.entries.associateWith { Mutex() }
+
     suspend fun legislaturaCorrente(): Int = mutex.withLock {
         legislatura ?: run {
             val n = runCatching {
@@ -329,7 +332,10 @@ class ParlamentoRepository(private val sparql: SparqlClient = SparqlClient()) {
 
     // ---------------------------------------------------------------- Parlamentari
 
-    suspend fun parlamentari(ramo: Ramo, forza: Boolean = false): List<Parlamentare> {
+    suspend fun parlamentari(ramo: Ramo, forza: Boolean = false): List<Parlamentare> =
+        caricamentoParlamentari.getValue(ramo).withLock { caricaParlamentari(ramo, forza) }
+
+    private suspend fun caricaParlamentari(ramo: Ramo, forza: Boolean): List<Parlamentare> {
         if (!forza) cacheParlamentari[ramo]?.let { return it }
         val leg = legislaturaCorrente()
         val elenco = when (ramo) {

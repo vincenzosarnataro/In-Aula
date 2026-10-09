@@ -30,6 +30,7 @@ object Testi {
 
     const val aula = "Aula"
     const val parlamentari = "Parlamentari"
+    const val gruppi = "Gruppi"
 
     const val tema = "Tema"
     const val temaSistema = "Come il sistema"
@@ -159,6 +160,21 @@ object Testi {
         Ramo.SENATO -> "Carico i senatori in carica…"
         Ramo.CAMERA -> "Carico i deputati in carica…"
     }
+
+    // ---------------------------------------------------------------- Gruppi parlamentari
+
+    const val gruppiParlamentari = "Gruppi parlamentari"
+    const val senzaGruppo = "Senza gruppo"
+    const val composizione = "Composizione"
+    const val seggiEtichetta = "seggi"
+    fun descrizioneComposizione(gruppi: List<Pair<String, Int>>) =
+        "Composizione: " + gruppi.joinToString("; ") { (nome, seggi) -> "$nome ${seggi(seggi)}" }
+    fun numeroGruppi(n: Int) = if (n == 1) "1 gruppo" else "$n gruppi"
+    fun seggi(n: Int) = if (n == 1) "1 seggio" else "$n seggi"
+    fun quotaSeggi(quota: String) = "$quota dei seggi"
+    fun membri(n: Int) = "Membri · $n"
+    fun membriConCambi(n: Int) = if (n == 1) "1 membro ha cambiato gruppo in questa legislatura" else "$n membri hanno cambiato gruppo in questa legislatura"
+    const val notaGruppi = "Composizione calcolata sui parlamentari in carica."
 
     // ---------------------------------------------------------------- Scheda parlamentare
 

@@ -1,8 +1,9 @@
 package it.aula.data.sparql
 
-import platform.Foundation.NSLog
-
-/** Nella console di Xcode e in Console.app. */
+/**
+ * Nella console di Xcode. Non NSLog: è variadica, e Kotlin/Native passa la String al `%@` senza
+ * convertirla in NSString, così NSLog legge i byte del testo come un puntatore (EXC_BAD_ACCESS).
+ */
 internal actual fun logHttp(message: String) {
-    NSLog("[AulaHttp] %@", message)
+    println("[AulaHttp] $message")
 }

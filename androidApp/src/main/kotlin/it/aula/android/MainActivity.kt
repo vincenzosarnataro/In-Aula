@@ -32,6 +32,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.HowToVote
+import androidx.compose.material.icons.outlined.PieChart
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -55,6 +57,8 @@ import androidx.navigation3.ui.NavDisplay
 import it.aula.AppGraph
 import it.aula.android.ui.AulaScreen
 import it.aula.android.ui.AulaTheme
+import it.aula.android.ui.GruppiScreen
+import it.aula.android.ui.GruppoScreen
 import it.aula.android.ui.ParlamentareScreen
 import it.aula.android.ui.ParlamentariScreen
 import it.aula.android.ui.SchedaAttoScreen
@@ -63,9 +67,11 @@ import it.aula.android.ui.rememberEntryStore
 import it.aula.android.ui.rememberTabStore
 import it.aula.model.Atto
 import it.aula.model.Parlamentare
+import it.aula.model.Ramo
 import it.aula.model.Votazione
 import it.aula.model.VotoIndividuale
 import it.aula.presentation.AulaStore
+import it.aula.presentation.GruppiStore
 import it.aula.presentation.ParlamentariStore
 import kotlinx.serialization.Serializable
 import kotlin.math.roundToInt
@@ -104,7 +110,7 @@ class MainActivity : ComponentActivity() {
 
 // ---------------------------------------------------------------- Destinazioni
 
-/** Schermata principale con le tab Aula e Parlamentari. */
+/** Schermata principale con le tab Aula, Parlamentari e Gruppi. */
 @Serializable
 private data object Home : NavKey
 
@@ -118,7 +124,15 @@ private data class SchedaParlamentare(val parlamentare: Parlamentare) : NavKey
 @Serializable
 private data class SchedaProvvedimento(val atto: Atto) : NavKey
 
-private enum class Tab(val titolo: String) { AULA(Testi.aula), PARLAMENTARI(Testi.parlamentari) }
+/** Scheda di un gruppo: solo la chiave, i membri si leggono dallo store della tab Gruppi. */
+@Serializable
+private data class SchedaGruppo(val ramo: Ramo, val nome: String) : NavKey
+
+private enum class Tab(val titolo: String, val icona: ImageVector) {
+    AULA(Testi.aula, Icons.Outlined.HowToVote),
+    PARLAMENTARI(Testi.parlamentari, Icons.Outlined.Groups),
+    GRUPPI(Testi.gruppi, Icons.Outlined.PieChart),
+}
 
 // ---------------------------------------------------------------- Navigazione
 fun createMaterialTransition(forward: Boolean, motionScheme: MotionScheme): ContentTransform {
@@ -154,6 +168,7 @@ private fun AulaApp() {
     // cambi di tab, e il dettaglio votazione può leggere l'elenco dei parlamentari già caricato.
     val aulaStore = rememberTabStore("aula") { AppGraph.aulaStore() }
     val parlamentariStore = rememberTabStore("parlamentari") { AppGraph.parlamentariStore() }
+    val gruppiStore = rememberTabStore("gruppi") { AppGraph.gruppiStore() }
     val motion = MaterialTheme.motionScheme
     NavDisplay(
         backStack = backStack,
@@ -172,7 +187,7 @@ private fun AulaApp() {
         predictivePopTransitionSpec = { createMaterialTransition(forward = false, motionScheme = motion) },
         entryProvider = entryProvider {
             entry<Home> {
-                Home(aulaStore, parlamentariStore, apri = { backStack.add(it) })
+                Home(aulaStore, parlamentariStore, gruppiStore, apri = { backStack.add(it) })
             }
             entry<DettaglioVotazione> { chiave ->
                 val store = rememberEntryStore { AppGraph.votazioneStore(chiave.votazione) }
@@ -195,6 +210,15 @@ private fun AulaApp() {
                     onIndietro = indietro,
                     onVotazione = { backStack.add(DettaglioVotazione(it)) })
             }
+            entry<SchedaGruppo> { chiave ->
+                GruppoScreen(
+                    gruppiStore,
+                    ramo = chiave.ramo,
+                    nome = chiave.nome,
+                    onIndietro = indietro,
+                    onParlamentare = { backStack.add(SchedaParlamentare(it)) },
+                )
+            }
             entry<SchedaParlamentare> { chiave ->
                 val store = rememberEntryStore { AppGraph.parlamentareStore(chiave.parlamentare) }
                 ParlamentareScreen(store, onIndietro = indietro)
@@ -211,6 +235,7 @@ private fun AulaApp() {
 private fun Home(
     aulaStore: AulaStore,
     parlamentariStore: ParlamentariStore,
+    gruppiStore: GruppiStore,
     apri: (NavKey) -> Unit,
 ) {
     var tab by rememberSaveable { mutableStateOf(Tab.AULA) }
@@ -221,12 +246,7 @@ private fun Home(
                     ShortNavigationBarItem(
                         selected = tab == t,
                         onClick = { tab = t },
-                        icon = {
-                            Icon(
-                                if (t == Tab.AULA) Icons.Outlined.HowToVote else Icons.Outlined.Groups,
-                                contentDescription = null,
-                            )
-                        },
+                        icon = { Icon(t.icona, contentDescription = null) },
                         label = { Text(t.titolo) },
                     )
                 }
@@ -254,6 +274,7 @@ private fun Home(
                         SchedaParlamentare(it)
                     )
                 }
+                Tab.GRUPPI -> GruppiScreen(gruppiStore, modifier) { apri(SchedaGruppo(it.ramo, it.nome)) }
             }
         }
     }

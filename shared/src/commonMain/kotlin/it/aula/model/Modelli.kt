@@ -239,6 +239,68 @@ data class Parlamentare(
 }
 
 /**
+ * Gruppo parlamentare di un ramo, ricostruito dai parlamentari in carica: niente query in più,
+ * e la composizione coincide con quella dell'elenco dei parlamentari.
+ */
+data class GruppoParlamentare(
+    val ramo: Ramo,
+    val nome: String,
+    val membri: List<Parlamentare>,
+    /** Parlamentari in carica nel ramo: il denominatore della quota. */
+    val seggiTotali: Int,
+) {
+    /** Colore del gruppo come 0xRRGGBB, uguale nelle due app e stabile nel tempo. */
+    val colore: Long get() = ColoriGruppi.colore(nome)
+
+    val seggi: Int get() = membri.size
+    val quota: Double get() = if (seggiTotali > 0) seggi * 100.0 / seggiTotali else 0.0
+    val quotaLabel: String get() = Formati.percentuale(quota)
+
+    /** Membri che in questa legislatura hanno cambiato gruppo almeno una volta. */
+    val conCambi: Int get() = membri.count { it.cambiDiGruppo > 0 }
+}
+
+/**
+ * Un colore fisso per gruppo, ispirato a quello del partito. I nomi cambiano tra i rami e nel
+ * tempo ("LEGA - SALVINI PREMIER" alla Camera, "Lega Salvini Premier - Partito Sardo d'Azione"
+ * al Senato), quindi si riconoscono per parole chiave. L'ordine conta: "lega" va provato prima
+ * di "azione", che compare anche nel nome del gruppo della Lega al Senato.
+ *
+ * Toni scelti con un validatore di palette (distanza percettiva OKLab): a vista normale ogni
+ * coppia resta sopra ΔE 12, tranne i due verdi di Lega e AVS che sono voluti. Con 11 colori la
+ * separazione per i daltonici non si ottiene per tutte le coppie: nella torta l'identità è
+ * affidata anche allo stacco tra le fette e alla legenda con i nomi.
+ */
+object ColoriGruppi {
+    private val perParolaChiave: List<Pair<String, Long>> = listOf(
+        "fratelli d'italia" to 0x1F3A93,
+        "partito democratico" to 0xB71C1C,
+        "lega" to 0x1B7F3B,
+        "movimento 5 stelle" to 0xE0A800,
+        "forza italia" to 0x3B8FD9,
+        "alleanza verdi" to 0x689F38,
+        "noi moderati" to 0xE65100,
+        "italia viva" to 0xF48FB1,
+        "azione" to 0x7E57C2,
+        "autonomie" to 0x4DD0E1,
+        "misto" to 0xABABAB,
+    )
+
+    /** Per i gruppi non in tabella: scelto dal nome, quindi sempre lo stesso per lo stesso gruppo. */
+    private val diRiserva: List<Long> = listOf(0x6D4C41, 0x5C6BC0, 0x26A69A, 0xAB47BC, 0x8D6E63, 0x546E7A)
+
+    const val SENZA_GRUPPO: Long = 0xDADADA
+
+    fun colore(nome: String): Long {
+        if (nome == Testi.senzaGruppo) return SENZA_GRUPPO
+        // lowercase() copre anche "MoVimento 5 Stelle" del Senato.
+        val n = nome.lowercase()
+        perParolaChiave.firstOrNull { (chiave, _) -> chiave in n }?.let { return it.second }
+        return diRiserva[(nome.hashCode() and Int.MAX_VALUE) % diRiserva.size]
+    }
+}
+
+/**
  * Partecipazione al voto, con la formula di Openpolis: presenze = voti espressi +
  * presenze senza voto (+ turni di presidenza alla Camera); le missioni sono una
  * categoria a sé e non contano come assenze.

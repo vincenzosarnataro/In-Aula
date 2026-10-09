@@ -15,6 +15,7 @@ import it.aula.model.DettaglioVotazione
 import it.aula.model.Esito
 import it.aula.model.FaseIter
 import it.aula.model.Parlamentare
+import it.aula.model.GruppoParlamentare
 import it.aula.model.Presenze
 import it.aula.model.ProfiloParlamentare
 import it.aula.model.Ramo
@@ -26,6 +27,7 @@ import it.aula.model.Votazione
 import it.aula.model.VotoIndividuale
 import it.aula.presentation.AulaState
 import it.aula.presentation.FiltroVotazioni
+import it.aula.presentation.GruppiState
 import it.aula.presentation.ParlamentareState
 import it.aula.presentation.ParlamentariState
 import it.aula.presentation.SchedaAttoState
@@ -174,6 +176,11 @@ private object Esempi {
         cambiDiGruppo = 1,
     )
 
+    /** I parlamentari di esempio raggruppati come fa lo store, dal gruppo più numeroso. */
+    val gruppiParlamentari: List<GruppoParlamentare> = parlamentari.groupBy { it.gruppo }.entries
+        .sortedByDescending { it.value.size }
+        .map { (nome, membri) -> GruppoParlamentare(Ramo.CAMERA, nome, membri, seggiTotali = parlamentari.size) }
+
     val scheda = SchedaAtto(
         atto = atto,
         tipo = "Progetto di Legge",
@@ -316,4 +323,19 @@ internal fun AnteprimaParlamentare() = Anteprima {
 @Composable
 internal fun AnteprimaParlamentareCaricamento() = Anteprima {
     ParlamentareContenuto(ParlamentareState(parlamentare = Esempi.parlamentare))
+}
+
+// ---------------------------------------------------------------- Gruppi parlamentari
+
+@PreviewLightDark
+@Composable
+internal fun AnteprimaGruppi() = Anteprima {
+    GruppiContenuto(GruppiState(gruppi = Esempi.gruppiParlamentari))
+}
+
+@PreviewLightDark
+@Composable
+internal fun AnteprimaGruppo() = Anteprima {
+    val gruppo = Esempi.gruppiParlamentari.first()
+    GruppoContenuto(gruppo, gruppo.nome, GruppiState(gruppi = Esempi.gruppiParlamentari))
 }
