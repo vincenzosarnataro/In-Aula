@@ -7,6 +7,7 @@ import it.aula.model.Atto
 import it.aula.model.Adesione
 import it.aula.model.FaseIter
 import it.aula.model.Relatore
+import it.aula.model.ProfiloParlamentare
 import it.aula.model.SchedaAtto
 import it.aula.model.DescrizioneVoto
 import it.aula.model.DettaglioVotazione
@@ -37,6 +38,7 @@ class ParlamentoRepository(private val sparql: SparqlClient = SparqlClient()) {
     private val cacheParlamentari = mutableMapOf<Ramo, List<Parlamentare>>()
     private val cacheDettagli = mutableMapOf<String, DettaglioVotazione>()
     private val cacheAdesioni = mutableMapOf<Ramo, Map<String, List<Adesione>>>()
+    private val cacheProfili = mutableMapOf<String, ProfiloParlamentare>()
 
     suspend fun legislaturaCorrente(): Int = mutex.withLock {
         legislatura ?: run {
@@ -233,6 +235,20 @@ class ParlamentoRepository(private val sparql: SparqlClient = SparqlClient()) {
     /** Storia dei gruppi di un parlamentare nella legislatura corrente, dalla prima adesione. */
     suspend fun storiaGruppi(parlamentare: Parlamentare): List<Adesione> =
         adesioni(parlamentare.ramo)[parlamentare.uri].orEmpty()
+
+    /** Nascita, studi, professione ed elezione. In cache. */
+    suspend fun profilo(parlamentare: Parlamentare): ProfiloParlamentare {
+        cacheProfili[parlamentare.uri]?.let { return it }
+        val profilo = when (parlamentare.ramo) {
+            Ramo.CAMERA -> profiloCamera(sparql.camera(CameraQuery.profilo(parlamentare.uri)).firstOrNull())
+            Ramo.SENATO -> {
+                val leg = legislaturaCorrente()
+                profiloSenato(parlamentare.uri, leg, sparql.senato(SenatoQuery.profilo(parlamentare.uri, leg)).firstOrNull())
+            }
+        }
+        cacheProfili[parlamentare.uri] = profilo
+        return profilo
+    }
 
     /** Adesioni di tutti i parlamentari di un ramo, già ripulite e unite. In cache. */
     private suspend fun adesioni(ramo: Ramo): Map<String, List<Adesione>> {
@@ -473,7 +489,13 @@ class ParlamentoRepository(private val sparql: SparqlClient = SparqlClient()) {
             nome = r["nome"].orEmpty().capitalizzaParole(),
             cognome = r["cognome"].orEmpty().capitalizzaParole(),
             gruppo = gruppi[uri].orEmpty(),
-            fotoUrl = r["foto"]?.takeIf { it.isNotBlank() },
+            fotoUrl = when (ramo) {
+                Ramo.CAMERA -> r["foto"]?.takeIf { it.isNotBlank() }?.let(::fotoCamera)
+                // Le foto di senato.it stanno dietro una challenge anti-bot (AWS WAF) che solo un
+                // browser supera: l'app riceverebbe sempre una risposta vuota. Niente URL, quindi
+                // niente richiesta destinata a fallire: l'avatar mostra subito le iniziali.
+                Ramo.SENATO -> null
+            },
         )
     }
 
@@ -514,6 +536,79 @@ class ParlamentoRepository(private val sparql: SparqlClient = SparqlClient()) {
             val nome = parole.drop(cognome.size)
             val cognomeBello = cognome.joinToString(" ") { it.lowercase().capitalizzaParole() }
             return (nome + cognomeBello).joinToString(" ").trim().ifBlank { grezzo.trim() }
+        }
+
+        private val ID_FOTO_CAMERA = Regex("""id=(\d+)&legislatura=(\d+)""")
+
+        /**
+         * La foto pubblicata nei dati (getFoto.asp) rimanda a un file che non esiste più:
+         * si punta direttamente a quella usata dal sito della Camera.
+         */
+        internal fun fotoCamera(url: String): String {
+            val (id, leg) = ID_FOTO_CAMERA.find(url)?.destructured ?: return url
+            return "https://documenti.camera.it/_dati/leg$leg/schededeputatinuovosito/fotoDefinitivo/big/d$id.jpg"
+        }
+
+        /** "GENOVA", "GENOVA" → "Genova"; "BASSANO DEL GRAPPA", "VICENZA" → "Bassano del Grappa (Vicenza)". */
+        private fun luogo(citta: String?, provincia: String?): String? {
+            val c = citta?.takeIf { it.isNotBlank() }?.capitalizzaParole()?.preposizioniMinuscole() ?: return null
+            val p = provincia?.takeIf { it.isNotBlank() }?.capitalizzaParole()?.preposizioniMinuscole()
+            return if (p == null || p == c) c else "$c ($p)"
+        }
+
+        private fun String.preposizioniMinuscole(): String =
+            split(" ").joinToString(" ") { if (it.lowercase() in PREPOSIZIONI) it.lowercase() else it }
+
+        private val PREPOSIZIONI = setOf("di", "del", "della", "dei", "delle", "in", "sul", "sulla", "al", "e")
+
+        /** "LIGURIA - P01" → "Liguria - P01": i codici di collegio restano maiuscoli. */
+        private fun collegio(grezzo: String): String =
+            grezzo.split(" ").joinToString(" ") { parola ->
+                if (parola.any(Char::isDigit)) {
+                    parola
+                } else {
+                    parola.lowercase().replace(Regex("""(^|[-(])(\p{L})""")) { it.groupValues[1] + it.groupValues[2].uppercase() }
+                }
+            }
+
+        internal fun profiloCamera(r: Riga?): ProfiloParlamentare {
+            if (r == null) return ProfiloParlamentare()
+            // "Laurea in economia aziendale; Funzionario amministrativo, Sindaco di…"
+            val parti = r["descr"].orEmpty().split(";").map { it.trim() }.filter { it.isNotEmpty() }
+            val (titolo, professione) = when {
+                parti.size >= 2 -> parti.first() to parti.drop(1).joinToString("; ")
+                parti.size == 1 && TITOLI_DI_STUDIO.containsMatchIn(parti[0]) -> parti[0] to null
+                else -> null to parti.firstOrNull()
+            }
+            return ProfiloParlamentare(
+                nascita = r["nascita"]?.let(Formati::normalizzaData)?.ifBlank { null },
+                luogoNascita = luogo(r["luogo"], r["prov"]),
+                titoloDiStudio = titolo,
+                professione = professione,
+                elezione = r["collegio"]?.takeIf { it.isNotBlank() }?.let(::collegio),
+                tipoElezione = r["tipo"]?.takeIf { it.isNotBlank() }?.replaceFirstChar(Char::uppercase),
+                lista = r["lista"]?.takeIf { it.isNotBlank() },
+                sito = r["scheda"]?.takeIf { it.isNotBlank() }?.replaceFirst("http://", "https://"),
+            )
+        }
+
+        private val TITOLI_DI_STUDIO = Regex("^(laurea|diploma|licenza|dottorato|maturit)", RegexOption.IGNORE_CASE)
+
+        internal fun profiloSenato(uri: String, leg: Int, r: Riga?): ProfiloParlamentare {
+            val id = uri.substringAfterLast('/')
+            val sito = "https://www.senato.it/leg/$leg/BGT/Schede/Attsen/${id.padStart(8, '0')}.htm"
+            if (r == null) return ProfiloParlamentare(sito = sito)
+            val tipo = r["tipo"]?.takeIf { it.isNotBlank() }
+            // I senatori a vita e di diritto non hanno collegio: si mostra il tipo di mandato.
+            val elettivo = tipo == null || tipo.equals("elettivo", ignoreCase = true)
+            return ProfiloParlamentare(
+                nascita = r["nascita"]?.let(Formati::normalizzaData)?.ifBlank { null },
+                luogoNascita = luogo(r["citta"], r["prov"]),
+                professione = r["professione"]?.takeIf { it.isNotBlank() },
+                elezione = if (elettivo) (r["collegio"] ?: r["regione"])?.takeIf { it.isNotBlank() }?.let(::collegio) else null,
+                tipoElezione = if (elettivo) null else tipo?.replaceFirstChar(Char::uppercase),
+                sito = sito,
+            )
         }
 
         /** "FARMACIE" → "Farmacie". */

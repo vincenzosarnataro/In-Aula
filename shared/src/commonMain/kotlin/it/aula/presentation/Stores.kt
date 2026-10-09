@@ -14,6 +14,7 @@ import it.aula.model.Emiciclo
 import it.aula.model.Esito
 import it.aula.model.Parlamentare
 import it.aula.model.Presenze
+import it.aula.model.ProfiloParlamentare
 import it.aula.model.Ramo
 import it.aula.model.SchedaAtto
 import it.aula.model.Seduta
@@ -379,6 +380,8 @@ class ParlamentariStore(private val repo: ParlamentoRepository) :
 data class ParlamentareState(
     val parlamentare: Parlamentare,
     val presenze: Presenze? = null,
+    /** Nascita, studi, elezione; null finché non è caricato o se non disponibile. */
+    val profilo: ProfiloParlamentare? = null,
     /** Gruppi della legislatura, dal primo; null finché non è caricata o se non disponibile. */
     val storiaGruppi: List<Adesione>? = null,
     val caricamento: Boolean = true,
@@ -395,7 +398,11 @@ class ParlamentareStore(
     }
 
     fun ricarica() {
-        // La storia dei gruppi è indipendente dalle presenze (e molto più rapida).
+        // Profilo e storia dei gruppi sono indipendenti dalle presenze (e molto più rapidi).
+        scope.launch {
+            val profilo = runCatching { repo.profilo(current().parlamentare) }.getOrNull()
+            aggiorna { it.copy(profilo = profilo) }
+        }
         scope.launch {
             val storia = runCatching { repo.storiaGruppi(current().parlamentare) }.getOrNull()
             aggiorna { it.copy(storiaGruppi = storia) }

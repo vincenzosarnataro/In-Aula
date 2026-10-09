@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
@@ -34,12 +35,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import it.aula.Testi
 import it.aula.model.Adesione
 import it.aula.model.Presenze
+import it.aula.model.VoceProfilo
 import it.aula.presentation.ParlamentareState
 import it.aula.presentation.ParlamentareStore
 
@@ -53,6 +56,7 @@ fun ParlamentareScreen(store: ParlamentareStore, onIndietro: () -> Unit) {
 @Composable
 fun ParlamentareContenuto(stato: ParlamentareState, onIndietro: () -> Unit = {}, onRiprova: () -> Unit = {}) {
     val p = stato.parlamentare
+    val uriHandler = LocalUriHandler.current
 
     Scaffold(
         topBar = {
@@ -61,6 +65,13 @@ fun ParlamentareContenuto(stato: ParlamentareState, onIndietro: () -> Unit = {},
                 navigationIcon = {
                     IconButton(onClick = onIndietro) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = Testi.indietro)
+                    }
+                },
+                actions = {
+                    stato.profilo?.sito?.let { sito ->
+                        IconButton(onClick = { runCatching { uriHandler.openUri(sito) } }) {
+                            Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = Testi.apriSulSito)
+                        }
                     }
                 },
             )
@@ -91,6 +102,11 @@ fun ParlamentareContenuto(stato: ParlamentareState, onIndietro: () -> Unit = {},
                 }
             }
             Spacer(Modifier.height(24.dp))
+
+            stato.profilo?.voci?.takeIf { it.isNotEmpty() }?.let { voci ->
+                Profilo(voci)
+                Spacer(Modifier.height(16.dp))
+            }
 
             stato.storiaGruppi?.takeIf { it.isNotEmpty() }?.let { storia ->
                 StoriaGruppi(storia)
@@ -162,6 +178,18 @@ private fun SchedaPresenze(pr: Presenze) {
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+}
+
+/** Nascita, studi, professione ed elezione. */
+@Composable
+private fun Profilo(voci: List<VoceProfilo>) {
+    Sezione(titolo = Testi.profilo) {
+        voci.forEachIndexed { i, voce ->
+            Text(voce.etichetta, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(voce.valore.orEmpty(), style = MaterialTheme.typography.bodyMedium)
+            if (i < voci.lastIndex) Spacer(Modifier.height(10.dp))
+        }
+    }
 }
 
 /** I gruppi della legislatura, dal primo all'attuale, con le date di adesione. */

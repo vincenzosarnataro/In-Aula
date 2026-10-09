@@ -262,6 +262,45 @@ data class Presenze(
     val assenzeLabel: String get() = Formati.percentuale(assenzePct)
 }
 
+/**
+ * Chi è il parlamentare, oltre al nome: i due rami pubblicano campi diversi (il titolo di
+ * studio e la lista solo la Camera), quindi è tutto facoltativo.
+ */
+data class ProfiloParlamentare(
+    /** Data ISO. */
+    val nascita: String? = null,
+    /** "Bassano del Grappa (Vicenza)". */
+    val luogoNascita: String? = null,
+    val titoloDiStudio: String? = null,
+    val professione: String? = null,
+    /** Circoscrizione o collegio: "Liguria - P01", "Emilia-Romagna - U04 (Ravenna)". */
+    val elezione: String? = null,
+    /** "Proporzionale", "Maggioritario", "A vita"… */
+    val tipoElezione: String? = null,
+    val lista: String? = null,
+    /** Scheda personale sul sito ufficiale del ramo. */
+    val sito: String? = null,
+) {
+    val nascitaEstesa: String?
+        get() = listOfNotNull(luogoNascita, nascita?.let(Formati::dataEstesa))
+            .joinToString(", ").ifBlank { null }
+
+    val elezioneEstesa: String?
+        get() = listOfNotNull(elezione, tipoElezione).joinToString(" · ").ifBlank { null }
+
+    /** Le voci da mostrare, etichetta → valore, solo quelle presenti. */
+    val voci: List<VoceProfilo>
+        get() = listOf(
+            VoceProfilo(Testi.nascita, nascitaEstesa),
+            VoceProfilo(Testi.titoloDiStudio, titoloDiStudio),
+            VoceProfilo(Testi.professione, professione),
+            VoceProfilo(Testi.elezione, elezioneEstesa),
+            VoceProfilo(Testi.lista, lista),
+        ).filter { !it.valore.isNullOrBlank() }
+}
+
+data class VoceProfilo(val etichetta: String, val valore: String?)
+
 /** Appartenenza a un gruppo parlamentare. Date ISO; [al] null se ancora in corso. */
 data class Adesione(val gruppo: String, val dal: String, val al: String?) {
     val periodo: String

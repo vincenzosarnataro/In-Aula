@@ -1,5 +1,6 @@
 package it.aula.android
 
+import android.content.pm.ApplicationInfo
 import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -74,6 +75,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppGraph.logChiamate = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
         enableEdgeToEdge()
         setContent {
             val scuro = preferenzaTema.scelta.scuro(isSystemInDarkTheme())

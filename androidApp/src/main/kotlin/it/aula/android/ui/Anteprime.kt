@@ -16,6 +16,7 @@ import it.aula.model.Esito
 import it.aula.model.FaseIter
 import it.aula.model.Parlamentare
 import it.aula.model.Presenze
+import it.aula.model.ProfiloParlamentare
 import it.aula.model.Ramo
 import it.aula.model.Relatore
 import it.aula.model.RipartizioneGruppo
@@ -295,6 +296,12 @@ internal fun AnteprimaParlamentare() = Anteprima {
             presenze = Presenze(
                 votazioniTotali = 8338, presenze = 6012, missioni = 1630, assenze = 696,
                 favorevoli = 3480, contrari = 1890, astenuti = 642, nota = null,
+            ),
+            profilo = ProfiloParlamentare(
+                nascita = "1974-05-02",
+                luogoNascita = "Bassano del Grappa (Vicenza)",
+                professione = "Avvocato",
+                elezione = "Veneto - U03 (Padova)",
             ),
             storiaGruppi = listOf(
                 Adesione("Civici", "2022-10-13", "2024-03-20"),

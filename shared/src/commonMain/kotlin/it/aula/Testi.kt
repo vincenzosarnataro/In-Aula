@@ -167,6 +167,12 @@ object Testi {
         Ramo.CAMERA -> "Conto le presenze su tutte le votazioni della legislatura…"
     }
 
+    const val profilo = "Profilo"
+    const val nascita = "Nascita"
+    const val titoloDiStudio = "Titolo di studio"
+    const val professione = "Professione"
+    const val elezione = "Elezione"
+    const val lista = "Lista"
     const val partecipazioneAlVoto = "Partecipazione al voto"
     fun presenzeSu(votazioni: Int) = "presenze su $votazioni votazioni"
     const val presenze = "Presenze"

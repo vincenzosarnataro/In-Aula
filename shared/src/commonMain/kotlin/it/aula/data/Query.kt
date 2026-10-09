@@ -171,6 +171,33 @@ WHERE {
 }
 """
 
+    /**
+     * Profilo di un deputato. Titolo di studio e professione stanno insieme in dc:description
+     * ("Laurea in …; Ingegnere"); la nascita è sulla persona, collegata tramite il mandato.
+     */
+    fun profilo(deputatoUri: String) = """
+$PREFISSI
+PREFIX bio: <http://purl.org/vocab/bio/0.1/>
+PREFIX dct: <http://purl.org/dc/terms/>
+SELECT ?descr ?scheda ?nascita ?luogo ?prov ?collegio ?lista ?tipo WHERE {
+  <$deputatoUri> ocd:rif_mandatoCamera ?m .
+  OPTIONAL { <$deputatoUri> dc:description ?descr }
+  OPTIONAL { <$deputatoUri> dct:isReferencedBy ?scheda }
+  OPTIONAL {
+    ?p a foaf:Person ; ocd:rif_mandatoCamera ?m ; bio:Birth ?b .
+    ?b bio:date ?nascita .
+    OPTIONAL { ?b ocd:rif_luogo ?l . ?l rdfs:label ?luogo . OPTIONAL { ?l ocd:parentADM2 ?prov } }
+  }
+  OPTIONAL {
+    ?m ocd:rif_elezione ?e .
+    OPTIONAL { ?e dc:coverage ?collegio }
+    OPTIONAL { ?e ocd:lista ?lista }
+    OPTIONAL { ?e ocd:tipoElezione ?tipo }
+  }
+}
+LIMIT 1
+"""
+
     fun presenze(deputatoUri: String) = """
 $PREFISSI
 SELECT ?type ?descr (COUNT(DISTINCT ?v) AS ?n) WHERE {
@@ -364,17 +391,34 @@ SELECT DISTINCT ?sen ?gruppo WHERE {
 }
 """
 
+    /** Senza foaf:depiction: le foto del Senato non sono scaricabili dall'app (vedi ParlamentoRepository.parlamentare). */
     fun senatoriInCarica(legislatura: Int) = """
 PREFIX osr: <http://dati.senato.it/osr/>
 PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-SELECT DISTINCT ?s ?nome ?cognome ?foto WHERE {
+SELECT DISTINCT ?s ?nome ?cognome WHERE {
   ?s a osr:Senatore ; foaf:firstName ?nome ; foaf:lastName ?cognome ; osr:mandato ?m .
   ?m osr:legislatura $legislatura .
   OPTIONAL { ?m osr:fine ?fine }
-  OPTIONAL { ?s foaf:depiction ?foto }
   FILTER(!BOUND(?fine))
 }
 ORDER BY ?cognome ?nome
+"""
+
+    /** Profilo di un senatore: il Senato non pubblica il titolo di studio. */
+    fun profilo(senatoreUri: String, legislatura: Int) = """
+PREFIX osr: <http://dati.senato.it/osr/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?nascita ?citta ?prov ?professione ?collegio ?regione ?tipo WHERE {
+  <$senatoreUri> osr:mandato ?m . ?m osr:legislatura $legislatura .
+  OPTIONAL { <$senatoreUri> osr:dataNascita ?nascita }
+  OPTIONAL { <$senatoreUri> osr:cittaNascita ?citta }
+  OPTIONAL { <$senatoreUri> osr:provinciaNascita ?prov }
+  OPTIONAL { <$senatoreUri> osr:professione ?pr . ?pr rdfs:label ?professione }
+  OPTIONAL { ?m osr:collegioElezione ?collegio }
+  OPTIONAL { ?m osr:regioneElezione ?regione }
+  OPTIONAL { ?m osr:tipoMandato ?tipo }
+}
+LIMIT 1
 """
 
     fun presenzeCategoria(senatoreUri: String, proprieta: String, legislatura: Int) = """

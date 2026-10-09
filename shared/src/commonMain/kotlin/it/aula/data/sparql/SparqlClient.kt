@@ -3,6 +3,10 @@ package it.aula.data.sparql
 import it.aula.Testi
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.logging.LogLevel
+import io.ktor.client.plugins.logging.Logger
+import io.ktor.client.plugins.logging.Logging
+import io.ktor.client.plugins.logging.LoggingFormat
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
@@ -117,10 +121,20 @@ class SparqlClient(
         const val SENATO_MAX_REQUEST_URI = 2047
         private val SENATO_INTERVALLO_MINIMO = 2.seconds
 
-        fun defaultHttpClient(): HttpClient = HttpClient {
+        fun defaultHttpClient(log: Boolean = false): HttpClient = HttpClient {
             install(HttpTimeout) {
                 requestTimeoutMillis = 60_000
                 connectTimeoutMillis = 15_000
+            }
+            // Una riga per richiesta e una per risposta, con stato e durata: "<-- 200 OK … (812ms)".
+            if (log) {
+                install(Logging) {
+                    level = LogLevel.INFO
+                    format = LoggingFormat.OkHttp
+                    logger = object : Logger {
+                        override fun log(message: String) = logHttp(message)
+                    }
+                }
             }
         }
 

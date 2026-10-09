@@ -27,6 +27,10 @@ struct ParlamentareView: View {
                     }
                 }
 
+                if let voci = stato.profilo?.voci, !voci.isEmpty {
+                    Profilo(voci: voci)
+                }
+
                 if let storia = stato.storiaGruppi, !storia.isEmpty {
                     StoriaGruppi(storia: storia)
                 }
@@ -43,6 +47,34 @@ struct ParlamentareView: View {
         }
         .navigationTitle(p.ramo.etichetta)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let sito = stato.profilo?.sito, let url = URL(string: sito) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Link(destination: url) { Image(systemName: "safari") }
+                        .accessibilityLabel(testi.apriSulSito)
+                }
+            }
+        }
+    }
+}
+
+/// Nascita, studi, professione ed elezione.
+private struct Profilo: View {
+    let voci: [VoceProfilo]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(testi.profilo).font(.headline)
+            ForEach(Array(voci.enumerated()), id: \.offset) { _, voce in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(voce.etichetta).font(.caption).foregroundStyle(.secondary)
+                    Text(voce.valore ?? "").font(.callout)
+                }
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
     }
 }
 

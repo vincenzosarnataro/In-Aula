@@ -3,6 +3,12 @@ import Shared
 
 @main
 struct AulaApp: App {
+    init() {
+        #if DEBUG
+        AppGraph.shared.logChiamate = true
+        #endif
+    }
+
     var body: some Scene {
         WindowGroup {
             RadiceView()

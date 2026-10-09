@@ -1,6 +1,7 @@
 package it.aula
 
 import it.aula.data.ParlamentoRepository
+import it.aula.data.sparql.SparqlClient
 import it.aula.model.Atto
 import it.aula.model.Parlamentare
 import it.aula.model.Votazione
@@ -15,7 +16,12 @@ import it.aula.presentation.VotazioneStore
  * Da Swift: `AppGraph.shared.aulaStore()`.
  */
 object AppGraph {
-    val repository: ParlamentoRepository by lazy { ParlamentoRepository() }
+    /** Log delle chiamate HTTP: le app lo accendono solo in debug, prima di creare il primo store. */
+    var logChiamate: Boolean = false
+
+    val repository: ParlamentoRepository by lazy {
+        ParlamentoRepository(SparqlClient(SparqlClient.defaultHttpClient(log = logChiamate)))
+    }
 
     fun aulaStore() = AulaStore(repository)
     fun votazioneStore(votazione: Votazione) = VotazioneStore(repository, votazione)
