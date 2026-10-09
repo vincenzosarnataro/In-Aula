@@ -315,6 +315,8 @@ data class SchedaAtto(
     /** Votazioni d'Aula sull'atto in tutte le sue letture, dalla più recente. */
     val votazioni: List<Votazione>,
     val nota: String?,
+    /** Pagina ufficiale dell'atto sul sito del ramo in cui si trova questa lettura. */
+    val sito: String? = null,
 ) {
     val presentatoIlEsteso: String? get() = presentatoIl?.let(Formati::dataEstesa)
 }

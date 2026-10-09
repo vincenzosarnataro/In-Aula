@@ -203,6 +203,10 @@ class ParlamentoRepository(private val sparql: SparqlClient = SparqlClient()) {
             } else {
                 null
             },
+            sito = when (atto.ramo) {
+                Ramo.CAMERA -> "https://www.camera.it/leg$leg/126?leg=$leg&idDocumento=${atto.numeroSemplice}"
+                Ramo.SENATO -> idDdl?.let { "https://www.senato.it/leg/$leg/BGT/Schede/Ddliter/$it.htm" }
+            },
         )
     }
 

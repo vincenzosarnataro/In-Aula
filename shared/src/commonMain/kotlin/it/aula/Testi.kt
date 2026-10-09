@@ -187,6 +187,7 @@ object Testi {
     // ---------------------------------------------------------------- Scheda atto
 
     const val provvedimento = "Provvedimento"
+    const val apriSulSito = "Apri sul sito ufficiale"
     const val attesaSchedaAtto =
         "Ricostruisco l'iter e le votazioni nei due rami: il Senato accetta una richiesta ogni 2 secondi."
     const val iter = "Iter"

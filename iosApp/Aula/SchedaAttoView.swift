@@ -75,6 +75,14 @@ struct SchedaAttoView: View {
         }
         .navigationTitle(atto.numero)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let sito = stato.scheda?.sito, let url = URL(string: sito) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Link(destination: url) { Image(systemName: "safari") }
+                        .accessibilityLabel(testi.apriSulSito)
+                }
+            }
+        }
     }
 }
 
