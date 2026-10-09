@@ -1,0 +1,336 @@
+package it.aula.model
+
+import it.aula.Testi
+import kotlinx.serialization.Serializable
+
+@Serializable
+enum class Ramo(val etichetta: String) {
+    CAMERA(Testi.camera),
+    SENATO(Testi.senato),
+}
+
+@Serializable
+enum class Esito(val etichetta: String) {
+    APPROVATA(Testi.approvata),
+    RESPINTA(Testi.respinta),
+    SCONOSCIUTO("—"),
+}
+
+/** Votazione d'Aula. Le date sono sempre normalizzate in ISO `YYYY-MM-DD`. */
+@Serializable
+data class Votazione(
+    val uri: String,
+    val ramo: Ramo,
+    val data: String,
+    val numero: Int?,
+    val titolo: String,
+    val descrizione: String,
+    val esito: Esito,
+    val esitoGrezzo: String,
+    val favorevoli: Int?,
+    val contrari: Int?,
+    val astenuti: Int?,
+    val presenti: Int?,
+    val fiducia: Boolean,
+    val finale: Boolean,
+    val segreta: Boolean,
+    val sedutaUri: String,
+    val numeroSeduta: Int?,
+    /** Il provvedimento a cui si riferisce la votazione, se è noto o deducibile. */
+    val atto: Atto? = null,
+    /** Voti necessari per approvare, come pubblicati da Camera e Senato. */
+    val maggioranza: Int? = null,
+) {
+    /** Che cosa si vota, in italiano corrente: "Emendamento 8.1010", "Voto finale"… */
+    val oggetto: String get() = DescrizioneVoto.oggetto(ramo, titolo, descrizione)
+
+    /** Riga principale negli elenchi: il provvedimento, se lo conosciamo, altrimenti l'oggetto. */
+    val intestazione: String get() = atto?.titoloBreve ?: atto?.titolo ?: oggetto
+
+    val dataEstesa: String get() = Formati.dataEstesa(data)
+    val haConteggi: Boolean get() = favorevoli != null || contrari != null
+    val favorevoliN: Int get() = favorevoli ?: 0
+    val contrariN: Int get() = contrari ?: 0
+    val astenutiN: Int get() = astenuti ?: 0
+
+    /**
+     * Voti di scarto come su Openpolis: distanza dei favorevoli dalla maggioranza richiesta.
+     * Senza il dato della maggioranza si ripiega sulla differenza tra favorevoli e contrari.
+     */
+    val scarto: Int?
+        get() = when {
+            !haConteggi -> null
+            maggioranza != null -> kotlin.math.abs(favorevoliN - maggioranza)
+            else -> kotlin.math.abs(favorevoliN - contrariN)
+        }
+
+    /**
+     * Quanti voti in più dalla parte perdente sarebbero bastati a ribaltare l'esito.
+     * Alla Camera gli astenuti non contano tra i votanti; al Senato sì, e pesano come contrari.
+     * Il pareggio respinge.
+     */
+    val votiPerRibaltare: Int?
+        get() {
+            if (!haConteggi || esito == Esito.SCONOSCIUTO) return null
+            val contro = contrariN + if (ramo == Ramo.SENATO) astenutiN else 0
+            return when (esito) {
+                Esito.APPROVATA -> (favorevoliN - contro).coerceAtLeast(1)
+                else -> (contro - favorevoliN + 1).coerceAtLeast(1)
+            }
+        }
+
+    /**
+     * Votazione decisa per pochi voti: per ribaltarla bastava al massimo il 5% di chi ha votato
+     * (minimo 5 voti). Una soglia fissa non funziona: al Senato i votanti sono la metà, e in
+     * questa legislatura alla Camera i margini sotto i 10 voti si contano sulle dita.
+     */
+    val sulFilo: Boolean
+        get() {
+            val servono = votiPerRibaltare ?: return false
+            val votanti = favorevoliN + contrariN + astenutiN
+            return servono <= maxOf(SOGLIA_MINIMA_SUL_FILO, (votanti * QUOTA_SUL_FILO).toInt())
+        }
+
+    val scartoLabel: String?
+        get() = scarto?.let(Testi::scarto)
+    val etichette: List<String>
+        get() = buildList {
+            if (fiducia) add(Testi.etichettaFiducia)
+            if (finale) add(Testi.etichettaVotoFinale)
+            if (segreta) add(Testi.etichettaSegreta)
+            if (sulFilo) add(Testi.etichettaSulFilo)
+        }
+
+    companion object {
+        const val QUOTA_SUL_FILO = 0.05
+        const val SOGLIA_MINIMA_SUL_FILO = 5
+    }
+}
+
+/**
+ * Provvedimento (disegno o proposta di legge) su cui verte una votazione.
+ * [dedotto] indica che i dati ufficiali non collegano ancora la votazione all'atto:
+ * è stato ricavato dalle altre votazioni della stessa seduta.
+ */
+@Serializable
+data class Atto(
+    val numero: String,
+    val titolo: String,
+    val titoloBreve: String? = null,
+    /** Per esempio "Conversione del decreto-legge n. 144/2026". */
+    val natura: String? = null,
+    val proponenti: String? = null,
+    val dedotto: Boolean = false,
+    /** Temi del thesaurus TESEO (solo Senato). */
+    val temi: List<String> = emptyList(),
+) {
+    /** Ramo in cui si trova questa lettura dell'atto, dal prefisso del numero ("C. 2822-B", "S. 1786"). */
+    val ramo: Ramo get() = if (numero.startsWith("S")) Ramo.SENATO else Ramo.CAMERA
+
+    /** Numero senza ramo: "2822-B", "1786". */
+    val numeroSemplice: String get() = numero.substringAfter('.').trim()
+}
+
+/** Seduta ricostruita raggruppando le votazioni (stessa seduta, stessa data). */
+data class Seduta(
+    val ramo: Ramo,
+    val uri: String,
+    val data: String,
+    val numero: Int?,
+    val votazioni: List<Votazione>,
+) {
+    val titolo: String
+        get() = Testi.seduta(numero) + " · " + Formati.dataEstesa(data)
+}
+
+enum class TipoVoto(val etichetta: String, val presente: Boolean) {
+    FAVOREVOLE(Testi.favorevole, true),
+    CONTRARIO(Testi.contrario, true),
+    ASTENUTO(Testi.astenuto, true),
+    /** Scrutinio segreto alla Camera: partecipazione registrata, scelta no. */
+    HA_VOTATO(Testi.haVotatoSegreto, true),
+    PRESENTE_NON_VOTANTE(Testi.presenteNonVotante, true),
+    PRESIDENTE_DI_TURNO(Testi.presidenteDiTurno, true),
+    MISSIONE(Testi.inMissione, false),
+    ASSENTE(Testi.assente, false),
+    /** "Non ha votato" alla Camera senza sottocategoria riconosciuta. */
+    NON_HA_VOTATO(Testi.nonHaVotato, false),
+    ;
+
+    /** Voto espresso in chiaro: l'unico su cui ha senso parlare di linea di gruppo. */
+    val palese: Boolean get() = this == FAVOREVOLE || this == CONTRARIO || this == ASTENUTO
+}
+
+data class VotoIndividuale(
+    val parlamentareUri: String,
+    val nome: String,
+    val gruppo: String,
+    val voto: TipoVoto,
+)
+
+data class ConteggioVoto(val tipo: TipoVoto, val numero: Int)
+
+data class RipartizioneGruppo(
+    val gruppo: String,
+    val favorevoli: Int,
+    val contrari: Int,
+    val astenuti: Int,
+    val altri: Int,
+    /** In missione/congedo: esclusi dal calcolo della compattezza. */
+    val missioni: Int = 0,
+    /** Assenti o non votanti senza giustificazione. */
+    val nonPartecipanti: Int = 0,
+    /** Hanno espresso un voto diverso da quello prevalente nel gruppo. */
+    val ribelli: Int = 0,
+) {
+    val totale: Int get() = favorevoli + contrari + astenuti + altri
+
+    /** Voto prevalente tra favorevole, contrario e astenuto; null se nessuno ha espresso un voto palese. */
+    val votoGruppo: TipoVoto?
+        get() = listOf(TipoVoto.FAVOREVOLE to favorevoli, TipoVoto.CONTRARIO to contrari, TipoVoto.ASTENUTO to astenuti)
+            .filter { it.second > 0 }
+            .maxByOrNull { it.second }
+            ?.first
+
+    private val inCarica: Int get() = totale - missioni
+
+    /**
+     * Indice di compattezza alla Openpolis: quota dei componenti (esclusi i missionari)
+     * che hanno votato come il gruppo. Assenze e voti difformi lo abbassano.
+     */
+    val compattezza: Double?
+        get() {
+            val linea = when (votoGruppo) {
+                TipoVoto.FAVOREVOLE -> favorevoli
+                TipoVoto.CONTRARIO -> contrari
+                TipoVoto.ASTENUTO -> astenuti
+                else -> return null
+            }
+            return if (inCarica > 0) linea * 100.0 / inCarica else null
+        }
+
+    val nonPartecipantiPct: Double get() = if (inCarica > 0) nonPartecipanti * 100.0 / inCarica else 0.0
+    val ribelliPct: Double get() = if (inCarica > 0) ribelli * 100.0 / inCarica else 0.0
+    val compattezzaLabel: String get() = compattezza?.let(Formati::percentuale) ?: "—"
+    val nonPartecipantiLabel: String get() = "$nonPartecipanti (${Formati.percentuale(nonPartecipantiPct)})"
+    val ribelliLabel: String get() = "$ribelli (${Formati.percentuale(ribelliPct)})"
+}
+
+data class DettaglioVotazione(
+    val voti: List<VotoIndividuale>,
+    val ripartizione: List<RipartizioneGruppo>,
+    val nota: String?,
+)
+
+@Serializable
+data class Parlamentare(
+    val uri: String,
+    val ramo: Ramo,
+    val nome: String,
+    val cognome: String,
+    val gruppo: String,
+    val fotoUrl: String?,
+    /** Quante volte ha cambiato gruppo in questa legislatura. */
+    val cambiDiGruppo: Int = 0,
+) {
+    val nomeCompleto: String get() = "$nome $cognome".trim()
+    val iniziali: String
+        get() = "${nome.firstOrNull() ?: ""}${cognome.firstOrNull() ?: ""}".uppercase()
+}
+
+/**
+ * Partecipazione al voto, con la formula di Openpolis: presenze = voti espressi +
+ * presenze senza voto (+ turni di presidenza alla Camera); le missioni sono una
+ * categoria a sé e non contano come assenze.
+ */
+data class Presenze(
+    val votazioniTotali: Int,
+    val presenze: Int,
+    val missioni: Int,
+    val assenze: Int,
+    val favorevoli: Int,
+    val contrari: Int,
+    val astenuti: Int,
+    val nota: String?,
+) {
+    private fun pct(n: Int): Double = if (votazioniTotali > 0) n * 100.0 / votazioniTotali else 0.0
+    val presenzePct: Double get() = pct(presenze)
+    val missioniPct: Double get() = pct(missioni)
+    val assenzePct: Double get() = pct(assenze)
+    val presenzeLabel: String get() = Formati.percentuale(presenzePct)
+    val missioniLabel: String get() = Formati.percentuale(missioniPct)
+    val assenzeLabel: String get() = Formati.percentuale(assenzePct)
+}
+
+/** Appartenenza a un gruppo parlamentare. Date ISO; [al] null se ancora in corso. */
+data class Adesione(val gruppo: String, val dal: String, val al: String?) {
+    val periodo: String
+        get() = Formati.dataEstesa(dal) + " – " + (al?.let(Formati::dataEstesa) ?: Testi.oggi)
+}
+
+/** Un passaggio dell'iter di un provvedimento: "C.2822" approvato, poi "S.1971"… */
+data class FaseIter(
+    val numero: String,
+    val ramo: Ramo,
+    val stato: String?,
+    val data: String?,
+) {
+    val dataEstesa: String? get() = data?.let(Formati::dataEstesa)
+
+    /** Lo stato per esteso: il Senato lo pubblica abbreviato ("appr. con modificaz"). */
+    val statoEsteso: String?
+        get() = stato?.let { grezzo ->
+            ABBREVIAZIONI.fold(grezzo.trim()) { t, (sigla, esteso) -> t.replace(sigla, esteso, ignoreCase = true) }
+                .replaceFirstChar { it.uppercase() }
+        }
+
+    private companion object {
+        val ABBREVIAZIONI = listOf(
+            "appr. def. non pubbl" to "approvato definitivamente, non ancora pubblicato",
+            "appr. con modificaz" to "approvato con modificazioni",
+            "appr. def." to "approvato definitivamente",
+            "appr." to "approvato",
+            "in corso di esame in comm." to "in esame in commissione",
+            "comm." to "commissione",
+        )
+    }
+}
+
+/** Relatore di un disegno di legge al Senato, in commissione o in Assemblea. */
+data class Relatore(val nome: String, val organo: String, val tipo: String)
+
+/** Tutto ciò che sappiamo di un provvedimento, nei due rami. */
+data class SchedaAtto(
+    val atto: Atto,
+    /** "Progetto di legge", "Disegno di legge", "ordinaria"… */
+    val tipo: String?,
+    /** "Parlamentare", "Governo", oppure la descrizione del Senato ("Gov. Meloni-I: Ministro…"). */
+    val iniziativa: String?,
+    val presentatoIl: String?,
+    val primoFirmatario: String?,
+    val altriFirmatari: List<String>,
+    val relatori: List<Relatore>,
+    val temi: List<String>,
+    val iter: List<FaseIter>,
+    /** Votazioni d'Aula sull'atto in tutte le sue letture, dalla più recente. */
+    val votazioni: List<Votazione>,
+    val nota: String?,
+) {
+    val presentatoIlEsteso: String? get() = presentatoIl?.let(Formati::dataEstesa)
+}
+
+/**
+ * Le assenze tra chi ha perso sarebbero bastate a ribaltare il risultato: [assenti] membri
+ * dei gruppi schierati con la parte perdente non hanno partecipato, ne servivano [servivano].
+ */
+data class AssenzeDecisive(
+    val servivano: Int,
+    val assenti: Int,
+    /** Gruppo e suoi assenti, dal più numeroso. */
+    val perGruppo: List<AssentiGruppo>,
+    /** Gruppi le cui sole assenze sarebbero bastate. */
+    val decisiviDaSoli: List<String>,
+)
+
+data class AssentiGruppo(val gruppo: String, val assenti: Int)
+
