@@ -13,6 +13,7 @@ import it.aula.model.DettaglioVotazione
 import it.aula.model.Disposizione
 import it.aula.model.Emiciclo
 import it.aula.model.Esito
+import it.aula.model.Formati
 import it.aula.model.Governo
 import it.aula.model.GruppoParlamentare
 import it.aula.model.Legislatura
@@ -22,6 +23,8 @@ import it.aula.model.ProfiloParlamentare
 import it.aula.model.Ramo
 import it.aula.model.SchedaAtto
 import it.aula.model.Seduta
+import it.aula.model.StatisticheAula
+import it.aula.model.StatisticheLeggi
 import it.aula.model.TipoVoto
 import it.aula.model.Votazione
 import it.aula.model.VotoIndividuale
@@ -641,6 +644,218 @@ class GovernoStore(private val repo: ParlamentoRepository) : Store<GovernoState>
             } catch (e: Throwable) {
                 aggiorna { it.copy(caricamento = false, errore = e.messaggio()) }
             }
+        }
+    }
+}
+
+// ------------------------------------------------------------------ Versus: confronto tra legislature
+
+/** Quanto è stato caricato di una legislatura: ogni parte arriva per conto suo. */
+data class DatiLegislatura(
+    val governi: List<Governo>? = null,
+    val camera: StatisticheAula? = null,
+    val senato: StatisticheAula? = null,
+    val leggi: StatisticheLeggi? = null,
+    /** Almeno una parte non è arrivata. */
+    val errore: Boolean = false,
+) {
+    val completi: Boolean get() = governi != null && camera != null && senato != null && leggi != null
+}
+
+/**
+ * Una riga del confronto. [quotaA] e [quotaB] (0–1) sono le barre, in proporzione al valore più
+ * alto dei due; null se il confronto non ha senso (testo) o un valore manca.
+ */
+data class VoceVersus(
+    val etichetta: String,
+    val a: String?,
+    val b: String?,
+    val quotaA: Float? = null,
+    val quotaB: Float? = null,
+) {
+    val prevaleA: Boolean get() = (quotaA ?: 0f) > (quotaB ?: 0f)
+    val prevaleB: Boolean get() = (quotaB ?: 0f) > (quotaA ?: 0f)
+}
+
+data class SezioneVersus(val titolo: String, val voci: List<VoceVersus>)
+
+data class VersusState(
+    /** Dalla più recente. */
+    val disponibili: List<Legislatura> = emptyList(),
+    val a: Int? = null,
+    val b: Int? = null,
+    /** Conteggi divisi per gli anni di durata: le legislature durano diversamente. */
+    val perAnno: Boolean = false,
+    val dati: Map<Int, DatiLegislatura> = emptyMap(),
+) {
+    val legislaturaA: Legislatura? get() = disponibili.firstOrNull { it.numero == a }
+    val legislaturaB: Legislatura? get() = disponibili.firstOrNull { it.numero == b }
+
+    private val datiA: DatiLegislatura get() = a?.let { dati[it] } ?: DatiLegislatura()
+    private val datiB: DatiLegislatura get() = b?.let { dati[it] } ?: DatiLegislatura()
+
+    val caricamento: Boolean
+        get() = listOf(datiA, datiB).any { !it.completi && !it.errore }
+    val errore: Boolean get() = datiA.errore || datiB.errore
+
+    val sezioni: List<SezioneVersus> by lazy {
+        val la = legislaturaA ?: return@lazy emptyList()
+        val lb = legislaturaB ?: return@lazy emptyList()
+        val anniA = la.giorni?.let { it / 365.25 }
+        val anniB = lb.giorni?.let { it / 365.25 }
+
+        /** Conteggio, diviso per anno se richiesto. */
+        fun conteggio(etichetta: String, va: Int?, vb: Int?, sempreTotale: Boolean = false): VoceVersus {
+            val dividi = perAnno && !sempreTotale
+            val xa = va?.let { if (dividi) anniA?.let { anni -> it / anni } else it.toDouble() }
+            val xb = vb?.let { if (dividi) anniB?.let { anni -> it / anni } else it.toDouble() }
+            fun testo(x: Double?) = x?.let { if (dividi) Formati.decimale(it) else Formati.migliaia(it.toInt()) }
+            return voce(if (dividi) Testi.allAnno(etichetta) else etichetta, xa, xb, testo(xa), testo(xb))
+        }
+
+        fun quota(etichetta: String, xa: Double?, xb: Double?) =
+            voce(etichetta, xa, xb, xa?.let(Formati::percentuale), xb?.let(Formati::percentuale))
+
+        fun ramo(titolo: String, chi: String, sa: StatisticheAula?, sb: StatisticheAula?) = SezioneVersus(
+            titolo,
+            listOf(
+                conteggio(Testi.votazioniVersus, sa?.votazioni, sb?.votazioni),
+                conteggio(Testi.votiDiFiducia, sa?.fiducie, sb?.fiducie),
+                conteggio(Testi.votiFinali, sa?.finali, sb?.finali),
+                quota(Testi.quotaRespinte, sa?.quotaRespinte, sb?.quotaRespinte),
+                conteggio(Testi.hannoCambiatoGruppoVersus(chi), sa?.cambiDiGruppo, sb?.cambiDiGruppo, sempreTotale = true),
+            ),
+        )
+
+        val ga = datiA.governi
+        val gb = datiB.governi
+        listOf(
+            SezioneVersus(
+                Testi.inSintesi,
+                listOf(
+                    voce(
+                        Testi.durata,
+                        la.giorni?.toDouble(),
+                        lb.giorni?.toDouble(),
+                        la.giorni?.let { Testi.durata(it, la.conclusa) },
+                        lb.giorni?.let { Testi.durata(it, lb.conclusa) },
+                    ),
+                    conteggio(Testi.governi, ga?.size, gb?.size, sempreTotale = true),
+                    VoceVersus(Testi.presidentiDelConsiglio, ga?.let(::presidenti), gb?.let(::presidenti)),
+                ),
+            ),
+            SezioneVersus(
+                Testi.leggi,
+                listOf(
+                    conteggio(Testi.leggiApprovate, datiA.leggi?.totale, datiB.leggi?.totale),
+                    conteggio(Testi.leggiOrdinarie, datiA.leggi?.ordinarie, datiB.leggi?.ordinarie),
+                    conteggio(Testi.conversioniDl, datiA.leggi?.conversioni, datiB.leggi?.conversioni),
+                    conteggio(Testi.leggiCostituzionali, datiA.leggi?.costituzionali, datiB.leggi?.costituzionali),
+                    quota(Testi.diIniziativaDelGoverno, datiA.leggi?.quotaGoverno, datiB.leggi?.quotaGoverno),
+                ),
+            ),
+            ramo(Testi.camera, Testi.deputati, datiA.camera, datiB.camera),
+            ramo(Testi.senato, Testi.senatori, datiA.senato, datiB.senato),
+        )
+    }
+
+    private companion object {
+        fun voce(etichetta: String, xa: Double?, xb: Double?, a: String?, b: String?): VoceVersus {
+            val massimo = maxOf(xa ?: 0.0, xb ?: 0.0)
+            val confrontabili = xa != null && xb != null && massimo > 0
+            return VoceVersus(
+                etichetta = etichetta,
+                a = a,
+                b = b,
+                quotaA = if (confrontabili) (xa!! / massimo).toFloat() else null,
+                quotaB = if (confrontabili) (xb!! / massimo).toFloat() else null,
+            )
+        }
+
+        /** "Governo Conte I" → "Conte": i cognomi dei presidenti, dal primo governo, senza ripetizioni. */
+        fun presidenti(governi: List<Governo>): String =
+            governi.sortedBy { it.inizio }
+                .map { it.nome.substringAfter("Governo ").trim() }
+                .distinct()
+                .joinToString(", ")
+                .ifBlank { "—" }
+    }
+}
+
+class VersusStore(private val repo: ParlamentoRepository) : Store<VersusState>(VersusState()) {
+
+    private val caricamenti = mutableMapOf<Int, Job>()
+
+    init {
+        scope.launch {
+            val disponibili = repo.legislature()
+            // Di default la legislatura scelta nell'app contro quella prima.
+            val a = repo.legislatura().numero
+            val b = disponibili.map { it.numero }.filter { it < a }.maxOrNull()
+                ?: disponibili.map { it.numero }.firstOrNull { it != a }
+            aggiorna { it.copy(disponibili = disponibili, a = a, b = b) }
+            carica(a)
+            b?.let(::carica)
+        }
+    }
+
+    fun scegliA(numero: Int) {
+        aggiorna { it.copy(a = numero, b = if (it.b == numero) it.a else it.b) }
+        current().let { s -> listOfNotNull(s.a, s.b).forEach(::carica) }
+    }
+
+    fun scegliB(numero: Int) {
+        aggiorna { it.copy(b = numero, a = if (it.a == numero) it.b else it.a) }
+        current().let { s -> listOfNotNull(s.a, s.b).forEach(::carica) }
+    }
+
+    /** Scambia le due colonne. */
+    fun inverti() = aggiorna { it.copy(a = it.b, b = it.a) }
+
+    fun mostraPerAnno(attivo: Boolean) = aggiorna { it.copy(perAnno = attivo) }
+
+    /** Riprova le parti mancanti. */
+    fun ricarica() {
+        val s = current()
+        listOfNotNull(s.a, s.b).forEach { n ->
+            if (s.dati[n]?.errore == true) {
+                caricamenti.remove(n)
+                aggiorna { it.copy(dati = it.dati + (n to it.dati.getValue(n).copy(errore = false))) }
+            }
+            carica(n)
+        }
+    }
+
+    /** Carica le parti mancanti di una legislatura, ciascuna appena arriva. */
+    private fun carica(n: Int) {
+        if (caricamenti[n]?.isActive == true) return
+        val presenti = current().dati[n] ?: DatiLegislatura()
+        if (presenti.completi) return
+        caricamenti[n] = scope.launch {
+            fun salva(trasforma: (DatiLegislatura) -> DatiLegislatura) =
+                aggiorna { it.copy(dati = it.dati + (n to trasforma(it.dati[n] ?: DatiLegislatura()))) }
+
+            suspend fun parte(giaPresente: Boolean, carica: suspend () -> Unit) {
+                if (giaPresente) return
+                try {
+                    carica()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    salva { it.copy(errore = true) }
+                }
+            }
+            // La Camera risponde in fretta, il Senato in fila: prima le righe veloci.
+            val camera = launch {
+                parte(presenti.governi != null) { repo.governi(n).let { g -> salva { it.copy(governi = g) } } }
+                parte(presenti.camera != null) { repo.statisticheAula(Ramo.CAMERA, n).let { c -> salva { it.copy(camera = c) } } }
+            }
+            val senato = launch {
+                parte(presenti.leggi != null) { repo.statisticheLeggi(n).let { l -> salva { it.copy(leggi = l) } } }
+                parte(presenti.senato != null) { repo.statisticheAula(Ramo.SENATO, n).let { st -> salva { it.copy(senato = st) } } }
+            }
+            camera.join()
+            senato.join()
         }
     }
 }

@@ -232,6 +232,40 @@ SELECT DISTINCT ?m ?ruolo ?incarico ?delega ?nome ?cognome ?inizio ?fine ?interi
 }
 """
 
+    /**
+     * Totali della legislatura per il confronto: votazioni, fiducie, voti finali, respinte.
+     * La sottoquery DISTINCT serve perché ogni tripla sta in due named graph.
+     */
+    fun statisticheVotazioni(legislatura: Int) = """
+$PREFISSI
+SELECT (COUNT(?v) AS ?votazioni) (SUM(IF(?f = "1", 1, 0)) AS ?fiducie) (SUM(IF(?fin = "1", 1, 0)) AS ?finali)
+       (SUM(IF(?a = "0", 1, 0)) AS ?respinte) (SUM(IF(?a = "0" || ?a = "1", 1, 0)) AS ?conEsito)
+WHERE {
+  {
+    SELECT DISTINCT ?v (STR(?f0) AS ?f) (STR(?a0) AS ?a) (STR(?fin0) AS ?fin) WHERE {
+      ?v a ocd:votazione ; ocd:rif_leg ${leg(legislatura)} .
+      OPTIONAL { ?v ocd:richiestaFiducia ?f0 }
+      OPTIONAL { ?v ocd:approvato ?a0 }
+      OPTIONAL { ?v ocd:votazioneFinale ?fin0 }
+    }
+  }
+}
+"""
+
+    /** Deputati che nella legislatura hanno aderito ad almeno due gruppi, anche se poi decaduti. */
+    fun cambiDiGruppo(legislatura: Int) = """
+$PREFISSI
+SELECT (COUNT(*) AS ?n) WHERE {
+  {
+    SELECT ?dep (COUNT(DISTINCT ?g) AS ?k) WHERE {
+      ?g a ocd:gruppoParlamentare ; ocd:rif_leg ${leg(legislatura)} ; ocd:siComponeDi ?m .
+      ?m ocd:rif_deputato ?dep .
+    } GROUP BY ?dep
+  }
+  FILTER(?k > 1)
+}
+"""
+
     fun presenze(deputatoUri: String) = """
 $PREFISSI
 SELECT ?type ?descr (COUNT(DISTINCT ?v) AS ?n) WHERE {
@@ -379,6 +413,64 @@ SELECT DISTINCT ?sen ?g ?ini ?fine ?titolo ?dini WHERE {
   ?m a ocd:adesioneGruppo ; osr:legislatura $legislatura ; osr:gruppo ?g ; osr:inizio ?ini .
   OPTIONAL { ?m osr:fine ?fine }
   ?g osr:denominazione ?den . ?den osr:titolo ?titolo ; osr:inizio ?dini .
+}
+"""
+
+    // Statistiche per il confronto tra legislature. Niente IF/SUM: il firewall del Senato
+    // rifiuta quelle query (403). E COUNT(DISTINCT ?x) qui conta anche il valore non legato:
+    // le variabili contate devono essere sempre legate.
+
+    fun votazioniPerEsito(legislatura: Int) = """
+PREFIX osr: <http://dati.senato.it/osr/>
+SELECT ?esito (COUNT(DISTINCT ?v) AS ?n) WHERE {
+  ?v a osr:Votazione ; osr:legislatura $legislatura .
+  OPTIONAL { ?v osr:esito ?esito }
+} GROUP BY ?esito
+"""
+
+    /** Votazioni la cui etichetta contiene [parola] (e non [esclusa]): fiducia, voto finale. */
+    fun votazioniConEtichetta(legislatura: Int, parola: String, esclusa: String? = null) = """
+PREFIX osr: <http://dati.senato.it/osr/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT (COUNT(DISTINCT ?v) AS ?n) WHERE {
+  ?v a osr:Votazione ; osr:legislatura $legislatura ; rdfs:label ?l .
+  FILTER(CONTAINS(LCASE(?l), "$parola")${esclusa?.let { " && !CONTAINS(LCASE(?l), \"$it\")" }.orEmpty()})
+}
+"""
+
+    /**
+     * Leggi approvate definitivamente, per natura. Il Senato registra l'iter nei due rami.
+     * Lo stato è "appr. definit. Legge", ma fino alla XIV "approvato definitivamente. Legge".
+     */
+    fun leggiPerNatura(legislatura: Int) = """
+PREFIX osr: <http://dati.senato.it/osr/>
+SELECT ?natura (COUNT(DISTINCT ?id) AS ?n) WHERE {
+  ?d a osr:Ddl ; osr:legislatura $legislatura ; osr:statoDdl ?s ; osr:idDdl ?id ; osr:natura ?natura .
+  FILTER(CONTAINS(STR(?s), "definit") && CONTAINS(STR(?s), "Legge"))
+} GROUP BY ?natura
+"""
+
+    /** Leggi approvate presentate dal Governo (presidente del Consiglio o ministri). */
+    fun leggiDelGoverno(legislatura: Int) = """
+PREFIX osr: <http://dati.senato.it/osr/>
+SELECT (COUNT(DISTINCT ?id) AS ?n) WHERE {
+  ?d a osr:Ddl ; osr:legislatura $legislatura ; osr:statoDdl ?s ; osr:idDdl ?id ; osr:descrIniziativa ?i .
+  FILTER(CONTAINS(STR(?s), "definit") && CONTAINS(STR(?s), "Legge") &&
+    (CONTAINS(?i, "Ministro") || CONTAINS(?i, "Pres. Consiglio")))
+}
+"""
+
+    /** Senatori che nella legislatura hanno aderito ad almeno due gruppi. */
+    fun cambiDiGruppo(legislatura: Int) = """
+PREFIX osr: <http://dati.senato.it/osr/>
+PREFIX ocd: <http://dati.camera.it/ocd/>
+SELECT (COUNT(*) AS ?n) WHERE {
+  {
+    SELECT ?sen (COUNT(DISTINCT ?g) AS ?k) WHERE {
+      ?sen ocd:aderisce ?m . ?m a ocd:adesioneGruppo ; osr:legislatura $legislatura ; osr:gruppo ?g .
+    } GROUP BY ?sen
+  }
+  FILTER(?k > 1)
 }
 """
 

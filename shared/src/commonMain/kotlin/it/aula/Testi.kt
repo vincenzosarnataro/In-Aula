@@ -229,6 +229,45 @@ object Testi {
     const val nessunGoverno = "Nessun governo negli open data per questa legislatura."
     const val notaGoverno = "Fonte: Camera dei deputati. Tocca chi è deputato per aprirne la scheda."
 
+    // ---------------------------------------------------------------- Versus
+
+    const val versus = "Versus"
+    const val confrontoLegislature = "Due legislature a confronto"
+    const val inverti = "Inverti"
+    const val perAnno = "Per anno"
+    fun allAnno(etichetta: String) = "$etichetta all'anno"
+    const val inSintesi = "In sintesi"
+    const val durata = "Durata"
+    fun durata(giorni: Int, conclusa: Boolean): String {
+        val anni = giorni / 365
+        val mesi = (giorni % 365) / 30
+        val testo = listOfNotNull(
+            anni.takeIf { it > 0 }?.let { if (it == 1) "1 anno" else "$it anni" },
+            mesi.takeIf { it > 0 }?.let { if (it == 1) "1 mese" else "$it mesi" },
+        ).joinToString(" e ").ifBlank { "$giorni giorni" }
+        return if (conclusa) testo else "$testo, in corso"
+    }
+    const val governi = "Governi"
+    const val presidentiDelConsiglio = "Presidenti del Consiglio"
+    const val leggi = "Leggi"
+    const val leggiApprovate = "Leggi approvate"
+    const val leggiOrdinarie = "Leggi ordinarie"
+    const val conversioniDl = "Conversioni di decreti-legge"
+    const val leggiCostituzionali = "Leggi costituzionali"
+    const val diIniziativaDelGoverno = "Di iniziativa del Governo"
+    const val votazioniVersus = "Votazioni in Aula"
+    const val votiDiFiducia = "Voti di fiducia"
+    const val votiFinali = "Voti finali"
+    const val quotaRespinte = "Votazioni respinte"
+    const val deputati = "Deputati"
+    const val senatori = "Senatori"
+    fun hannoCambiatoGruppoVersus(chi: String) = "$chi che hanno cambiato gruppo"
+    const val attesaVersus = "Il Senato accetta una richiesta ogni 2 secondi: le sue righe arrivano per ultime."
+    const val erroreVersus = "Alcuni dati non sono arrivati."
+    const val notaVersus = "Leggi dal Senato, che registra l'iter nei due rami. Al Senato fiducie e voti finali si " +
+        "riconoscono dall'oggetto della votazione. \"—\": dato non registrato. Una legislatura in corso è a metà " +
+        "strada: per confrontarla usa \"Per anno\"."
+
     // ---------------------------------------------------------------- Scheda atto
 
     const val provvedimento = "Provvedimento"

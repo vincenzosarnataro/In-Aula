@@ -302,6 +302,33 @@ data class ComposizioneGoverno(
         }
 }
 
+/** Totali di un ramo in una legislatura, per il confronto tra legislature. */
+data class StatisticheAula(
+    val votazioni: Int,
+    /** null se non registrate nei dati (la Camera non le marca nelle prime legislature). */
+    val fiducie: Int?,
+    val finali: Int,
+    val respinte: Int,
+    /** Votazioni con esito noto: il denominatore della quota di respinte. */
+    val conEsito: Int,
+    /** Parlamentari che hanno aderito ad almeno due gruppi. */
+    val cambiDiGruppo: Int,
+) {
+    val quotaRespinte: Double? get() = if (conEsito > 0) respinte * 100.0 / conEsito else null
+}
+
+/** Leggi approvate definitivamente in una legislatura, per natura. */
+data class StatisticheLeggi(
+    val ordinarie: Int,
+    val conversioni: Int,
+    val bilancio: Int,
+    val costituzionali: Int,
+    val delGoverno: Int,
+) {
+    val totale: Int get() = ordinarie + conversioni + bilancio + costituzionali
+    val quotaGoverno: Double? get() = if (totale > 0) delGoverno * 100.0 / totale else null
+}
+
 /** Legislatura della Repubblica. Date ISO; [fine] è null per quella in corso. */
 data class Legislatura(
     val numero: Int,
@@ -309,6 +336,9 @@ data class Legislatura(
     val fine: String? = null,
 ) {
     val romano: String get() = numeroRomano(numero)
+
+    /** Giorni dall'inizio alla fine, o a oggi se è in corso. */
+    val giorni: Int? get() = inizio?.let { Formati.giorniTra(it, fine ?: Formati.oggi()) }
     val etichetta: String get() = Testi.legislatura(romano)
     val conclusa: Boolean get() = fine != null
 

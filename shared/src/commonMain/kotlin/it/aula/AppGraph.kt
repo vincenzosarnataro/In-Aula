@@ -12,6 +12,7 @@ import it.aula.presentation.LegislaturaStore
 import it.aula.presentation.ParlamentareStore
 import it.aula.presentation.ParlamentariStore
 import it.aula.presentation.SchedaAttoStore
+import it.aula.presentation.VersusStore
 import it.aula.presentation.VotazioneStore
 
 /**
@@ -35,6 +36,7 @@ object AppGraph {
     fun parlamentariStore() = ParlamentariStore(repository)
     fun gruppiStore() = GruppiStore(repository)
     fun governoStore() = GovernoStore(repository)
+    fun versusStore() = VersusStore(repository)
     fun parlamentareStore(parlamentare: Parlamentare) = ParlamentareStore(repository, parlamentare)
     fun schedaAttoStore(atto: Atto) = SchedaAttoStore(repository, atto)
 }

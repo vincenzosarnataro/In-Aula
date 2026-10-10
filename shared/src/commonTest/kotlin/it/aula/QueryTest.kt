@@ -32,6 +32,11 @@ class QueryTest {
             add(SenatoQuery.gruppiAttuali)
             add(SenatoQuery.senatoriInCarica(19))
             add(SenatoQuery.senatoriInCarica(18, "2022-10-12"))
+            add(SenatoQuery.votazioniPerEsito(19))
+            add(SenatoQuery.votazioniConEtichetta(19, "fiducia", esclusa = "sfiducia"))
+            add(SenatoQuery.leggiPerNatura(19))
+            add(SenatoQuery.leggiDelGoverno(19))
+            add(SenatoQuery.cambiDiGruppo(19))
             add(SenatoQuery.votazioniNelMandato(uriSenatore, 19))
             SenatoQuery.categorie.forEach {
                 add(SenatoQuery.votiCategoria(uriVotazione, it))
@@ -183,5 +188,40 @@ class QueryTest {
         )
         assertEquals(listOf("X Sangiuliano"), c.avvicendamenti.map { it.nomeCompleto })
         assertEquals(2, c.ministri.size)
+    }
+
+    @Test
+    fun dateEConfronto() {
+        assertEquals(1, Formati.giorniTra("2024-02-28", "2024-03-01")!! - 1)
+        assertEquals(1664, Formati.giorniTra("2018-03-23", "2022-10-12"))
+        assertTrue(Formati.oggi().matches(Regex("\\d{4}-\\d{2}-\\d{2}")))
+        assertEquals("10.724", Formati.migliaia(10724))
+        assertEquals("3,3", Formati.decimale(3.25))
+        assertEquals("1.235", Formati.decimale(1234.6))
+        assertEquals("4 anni e 6 mesi", Testi.durata(1664, conclusa = true))
+
+        val stato = it.aula.presentation.VersusState(
+            disponibili = listOf(Legislatura(19, "2022-10-13", null), Legislatura(18, "2018-03-23", "2022-10-12")),
+            a = 19,
+            b = 18,
+            dati = mapOf(
+                19 to it.aula.presentation.DatiLegislatura(
+                    governi = listOf(it.aula.model.Governo("g202", "I Governo Meloni", "2022-10-21", null)),
+                ),
+                18 to it.aula.presentation.DatiLegislatura(
+                    governi = listOf(
+                        it.aula.model.Governo("g182", "I Governo Draghi", "2021-02-12", "2022-10-21"),
+                        it.aula.model.Governo("g142", "I Governo Conte", "2018-05-31", "2019-09-04"),
+                        it.aula.model.Governo("g162", "II Governo Conte", "2019-09-04", "2021-02-12"),
+                    ),
+                ),
+            ),
+        )
+        val sintesi = stato.sezioni.first().voci
+        assertEquals("Conte, Draghi", sintesi[2].b)
+        assertEquals("1", sintesi[1].a)
+        assertEquals(1f, sintesi[1].quotaB)
+        assertTrue(sintesi[1].prevaleB)
+        assertTrue(stato.caricamento)
     }
 }

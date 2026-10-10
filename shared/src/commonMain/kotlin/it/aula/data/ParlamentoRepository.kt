@@ -14,6 +14,8 @@ import it.aula.model.Legislatura
 import it.aula.model.Relatore
 import it.aula.model.ProfiloParlamentare
 import it.aula.model.SchedaAtto
+import it.aula.model.StatisticheAula
+import it.aula.model.StatisticheLeggi
 import it.aula.model.DescrizioneVoto
 import it.aula.model.DettaglioVotazione
 import it.aula.model.Esito
@@ -51,6 +53,8 @@ class ParlamentoRepository(private val sparql: SparqlClient = SparqlClient()) {
     private val cacheProfili = mutableMapOf<Pair<Int, String>, ProfiloParlamentare>()
     private val cacheGoverni = mutableMapOf<Int, List<Governo>>()
     private val cacheComposizioni = mutableMapOf<Pair<Int, String>, ComposizioneGoverno>()
+    private val cacheStatistiche = mutableMapOf<Pair<Int, Ramo>, StatisticheAula>()
+    private val cacheLeggi = mutableMapOf<Int, StatisticheLeggi>()
 
     /** Parlamentari e Gruppi chiedono lo stesso elenco all'avvio: lo si carica una volta sola. */
     private val caricamentoParlamentari = Ramo.entries.associateWith { Mutex() }
@@ -299,8 +303,10 @@ class ParlamentoRepository(private val sparql: SparqlClient = SparqlClient()) {
     // ---------------------------------------------------------------- Governo
 
     /** Governi della legislatura scelta, dal più recente. In cache. */
-    suspend fun governi(): List<Governo> {
-        val leg = legislatura().numero
+    suspend fun governi(): List<Governo> = governi(legislatura().numero)
+
+    /** Governi di una legislatura qualsiasi, dal più recente. In cache. */
+    suspend fun governi(leg: Int): List<Governo> {
         cacheGoverni[leg]?.let { return it }
         val elenco = sparql.camera(CameraQuery.governi(leg))
             .map(::governo)
@@ -323,6 +329,71 @@ class ParlamentoRepository(private val sparql: SparqlClient = SparqlClient()) {
             .sortedWith(compareBy({ chiaveIncarico(it.incarico) }, { it.dal }))
         return ComposizioneGoverno(governo, membri).also { cacheComposizioni[chiave] = it }
     }
+
+    // ---------------------------------------------------------------- Confronto tra legislature
+
+    /** Totali di un ramo in una legislatura: votazioni, fiducie, voti finali, respinte, cambi di gruppo. */
+    suspend fun statisticheAula(ramo: Ramo, leg: Int): StatisticheAula {
+        cacheStatistiche[leg to ramo]?.let { return it }
+        val statistiche = when (ramo) {
+            Ramo.CAMERA -> coroutineScope {
+                val cambi = async { conteggio(sparql.camera(CameraQuery.cambiDiGruppo(leg))) }
+                val r = sparql.camera(CameraQuery.statisticheVotazioni(leg)).firstOrNull().orEmpty()
+                StatisticheAula(
+                    votazioni = r["votazioni"]?.toIntOrNull() ?: 0,
+                    // Nelle prime legislature la Camera non marca le fiducie: zero vuol dire "non registrate".
+                    fiducie = r["fiducie"]?.toIntOrNull()?.takeIf { it > 0 },
+                    finali = r["finali"]?.toIntOrNull() ?: 0,
+                    respinte = r["respinte"]?.toIntOrNull() ?: 0,
+                    conEsito = r["conEsito"]?.toIntOrNull() ?: 0,
+                    cambiDiGruppo = cambi.await(),
+                )
+            }
+            // In fila comunque nella coda del Senato: niente parallelismo da guadagnare.
+            Ramo.SENATO -> {
+                val esiti = sparql.senato(SenatoQuery.votazioniPerEsito(leg))
+                    .associate { it["esito"].orEmpty() to (it["n"]?.toIntOrNull() ?: 0) }
+                val fiducie = conteggio(sparql.senato(SenatoQuery.votazioniConEtichetta(leg, "fiducia", esclusa = "sfiducia")))
+                val finali = conteggio(sparql.senato(SenatoQuery.votazioniConEtichetta(leg, "finale")))
+                val cambi = conteggio(sparql.senato(SenatoQuery.cambiDiGruppo(leg)))
+                val respinte = esiti.filterKeys { it.contains("respint", ignoreCase = true) }.values.sum()
+                val approvate = esiti.filterKeys { it.contains("approv", ignoreCase = true) }.values.sum()
+                StatisticheAula(
+                    votazioni = esiti.values.sum(),
+                    fiducie = fiducie,
+                    finali = finali,
+                    respinte = respinte,
+                    conEsito = respinte + approvate,
+                    cambiDiGruppo = cambi,
+                )
+            }
+        }
+        cacheStatistiche[leg to ramo] = statistiche
+        return statistiche
+    }
+
+    /** Leggi approvate definitivamente in una legislatura, dal Senato (che registra entrambi i rami). */
+    suspend fun statisticheLeggi(leg: Int): StatisticheLeggi {
+        cacheLeggi[leg]?.let { return it }
+        val perNatura = sparql.senato(SenatoQuery.leggiPerNatura(leg))
+            .associate { it["natura"].orEmpty().lowercase() to (it["n"]?.toIntOrNull() ?: 0) }
+        fun natura(parola: String) = perNatura.filterKeys { parola in it }.values.sum()
+        val conversioni = natura("decreto")
+        val bilancio = natura("bilancio")
+        val costituzionali = natura("costituzional")
+        val leggi = StatisticheLeggi(
+            // Tutto il resto è ordinario: così il totale torna anche con nature nuove o rare.
+            ordinarie = perNatura.values.sum() - conversioni - bilancio - costituzionali,
+            conversioni = conversioni,
+            bilancio = bilancio,
+            costituzionali = costituzionali,
+            delGoverno = conteggio(sparql.senato(SenatoQuery.leggiDelGoverno(leg))),
+        )
+        cacheLeggi[leg] = leggi
+        return leggi
+    }
+
+    private fun conteggio(righe: List<Riga>): Int = righe.firstOrNull()?.get("n")?.toIntOrNull() ?: 0
 
     // ---------------------------------------------------------------- Mappatura
 

@@ -24,6 +24,7 @@ struct RadiceView: View {
     @StateObject private var parlamentari = Osservato<ParlamentariState>(AppGraph.shared.parlamentariStore())
     @StateObject private var gruppi = Osservato<GruppiState>(AppGraph.shared.gruppiStore())
     @StateObject private var governo = Osservato<GovernoState>(AppGraph.shared.governoStore())
+    @StateObject private var versus = Osservato<VersusState>(AppGraph.shared.versusStore())
     @StateObject private var legislatura = Osservato<LegislaturaState>(AppGraph.shared.legislaturaStore())
     @AppStorage(SceltaTema.chiave) private var tema: SceltaTema = .sistema
 
@@ -55,6 +56,11 @@ struct RadiceView: View {
                     .navigationDestination(for: Parlamentare.self) { ParlamentareView(parlamentare: $0) }
             }
             .tabItem { Label(testi.governo, systemImage: "building.columns") }
+
+            NavigationStack {
+                VersusView(osservato: versus)
+            }
+            .tabItem { Label(testi.versus, systemImage: "arrow.left.arrow.right") }
         }
         .environmentObject(legislatura)
         .onAppear { tema.applica() }
