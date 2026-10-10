@@ -8,7 +8,7 @@
 
 App Kotlin Multiplatform che racconta l'attività di Camera e Senato a partire dai loro open data:
 sedute, votazioni, come ha votato ogni gruppo e ogni parlamentare, composizione dei gruppi,
-presenze e cambi di casacca.
+presenze e cambi di casacca, governi e ministri, dalla XIII legislatura a oggi, anche a confronto.
 
 [![Ultima release](https://img.shields.io/github/v/release/vincenzosarnataro/In-Aula?sort=semver&display_name=tag&label=release&logo=android&logoColor=white&color=285EA7)](https://github.com/vincenzosarnataro/In-Aula/releases/latest)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.4-7F52FF?logo=kotlin&logoColor=white)
@@ -17,7 +17,7 @@ presenze e cambi di casacca.
 ![SwiftUI](https://img.shields.io/badge/SwiftUI-iOS-F05138?logo=swift&logoColor=white)
 ![Dati](https://img.shields.io/badge/dati-CC--BY%20Camera%20%26%20Senato-009246)
 
-<img src="docs/media/demo.gif" width="300" alt="Demo dell'app: lista votazioni, emiciclo, gruppi, scheda atto, scheda parlamentare e composizione dei gruppi">
+<img src="docs/media/demo.gif" width="300" alt="Demo dell'app: lista votazioni ed emiciclo, scelta della XVIII legislatura, parlamentari e governi di quella legislatura, governo Meloni e confronto Versus tra XIX e XVIII">
 
 <sub>🎬 [Video in qualità piena (MP4)](docs/media/demo.mp4)</sub>
 
@@ -31,6 +31,23 @@ Tutta la logica sta nel modulo condiviso `shared`; le interfacce sono native, Je
 Android e SwiftUI su iOS.
 
 ## ✨ Funzionalità
+
+### 🕰️ Tutte le legislature, dalla XIII a oggi
+
+<table>
+<tr>
+<td width="33%"><img src="docs/media/13-legislatura.jpg" alt="Menu di scelta della legislatura, dalla XIX alla XIII"></td>
+<td width="33%"><img src="docs/media/14-parlamentari-xviii.jpg" alt="I 630 deputati a fine XVIII legislatura, con i cambi di gruppo"></td>
+<td>
+
+- Il pulsante **XIX** in alto apre l'elenco delle legislature con i loro anni: si torna fino alla **XIII** (1996), la prima con le votazioni negli open data di entrambi i rami.
+- La scelta vale per tutta l'app: votazioni, parlamentari, gruppi e governo si ricaricano sulla legislatura scelta, e la scelta resta salvata.
+- Per una legislatura conclusa l'elenco mostra chi era **in carica allo scioglimento** (630 deputati e 320 senatori per la XVIII), con i gruppi di fine legislatura.
+- Scegliendo quella in corso l'app torna a seguire sempre la più recente.
+
+</td>
+</tr>
+</table>
 
 ### 🗳️ Le votazioni in Aula
 
@@ -95,8 +112,8 @@ Android e SwiftUI su iOS.
 <td width="33%"><img src="docs/media/07-parlamentare.jpg" alt="Scheda di un deputato con profilo e gruppi"></td>
 <td>
 
-- **Deputati e senatori in carica**, cercabili per nome o gruppo, con la foto ufficiale dei deputati.
-- Filtro **Hanno cambiato gruppo**, per trovare subito chi ha cambiato casacca in questa legislatura.
+- **Deputati e senatori in carica** (o a fine legislatura, per quelle concluse), cercabili per nome o gruppo, con la foto ufficiale dei deputati.
+- Filtro **Hanno cambiato gruppo**, per trovare subito chi ha cambiato casacca nella legislatura.
 - **Profilo**: luogo e data di nascita, titolo di studio, professione, collegio di elezione e lista.
 - **Scheda personale**: tutti i gruppi di appartenenza con le date di adesione, e il link alla scheda sul sito ufficiale.
 - **Partecipazione al voto** calcolata con la formula Openpolis: presenze, missioni e assenze sulle votazioni della legislatura.
@@ -123,6 +140,40 @@ Android e SwiftUI su iOS.
 </tr>
 </table>
 
+### 👔 Il governo
+
+<table>
+<tr>
+<td width="33%"><img src="docs/media/15-governo.jpg" alt="Il governo Meloni: presidente del Consiglio, vicepresidenti e ministri"></td>
+<td width="33%"><img src="docs/media/17-governo-usciti.jpg" alt="I ministri che hanno lasciato il governo, con le date"></td>
+<td width="33%"><img src="docs/media/16-governo-xviii.jpg" alt="I tre governi della XVIII legislatura: Draghi, Conte II e Conte I"></td>
+</tr>
+</table>
+
+- **Presidente del Consiglio, vicepresidenti, ministri con e senza portafoglio**, ordinati per dicastero, con le cariche *ad interim* segnalate.
+- **Hanno lasciato il governo**: chi è uscito prima della fine, con l'ultimo incarico e le date. I cambi di nome dei ministeri (come "Transizione ecologica" diventato "Ambiente e sicurezza energetica") non contano come uscite.
+- Quando nella legislatura si sono succeduti più governi (Conte I, Conte II, Draghi) si passa dall'uno all'altro con un tocco.
+- I ministri che sono anche **deputati** hanno la foto e aprono la loro scheda con presenze e gruppi.
+
+### ⚔️ Versus: due legislature a confronto
+
+<table>
+<tr>
+<td width="33%"><img src="docs/media/18-versus.jpg" alt="Confronto tra XIX e XVIII legislatura: durata, governi, presidenti del Consiglio, leggi"></td>
+<td width="33%"><img src="docs/media/19-versus-anno.jpg" alt="Confronto per anno delle votazioni del Senato"></td>
+<td>
+
+- Si scelgono **due legislature qualsiasi**, una contro l'altra; un tocco le scambia.
+- **In sintesi**: durata, numero di governi, presidenti del Consiglio.
+- **Leggi**: approvate, ordinarie, conversioni di decreti-legge, costituzionali, quota di iniziativa del Governo.
+- **Camera e Senato**: votazioni in Aula, voti di fiducia, voti finali, quota di votazioni respinte, parlamentari che hanno cambiato gruppo.
+- **Per anno**: divide i conteggi per la durata, perché le legislature durano in modo diverso e quella in corso non è finita.
+- Ogni riga ha due barre che partono dal centro; il valore più alto è in grassetto.
+
+</td>
+</tr>
+</table>
+
 ## 🧱 Struttura
 
 ```
@@ -142,9 +193,9 @@ flowchart LR
     ST --> I[iOS<br>SwiftUI]
 ```
 
-Nel modulo `shared`, `SparqlClient` gestisce le due fonti con le loro regole. La Camera ogni tanto smette di rispondere per qualche secondo, quindi ogni richiesta viene ritentata fino a cinque volte con backoff esponenziale. Il Senato blocca con un 403 chi fa più di una richiesta ogni due secondi circa, e rifiuta request-URI oltre 2047 byte senza accettare il POST: le richieste al Senato passano quindi da una coda sequenziale con intervallo minimo di due secondi, e ogni query viene compattata e misurata prima dell'invio. `Query.kt` raccoglie le query SPARQL e `ParlamentoRepository` le traduce in modelli di dominio (`Votazione`, `Seduta`, `VotoIndividuale`, `Parlamentare`, `Presenze`, `GruppoParlamentare`). Gli store (`AulaStore`, `VotazioneStore`, `ParlamentariStore`, `ParlamentareStore`, `GruppiStore`, `SchedaAttoStore`) espongono uno `StateFlow` per Compose e un metodo `observe` per SwiftUI, così Swift non deve maneggiare Flow o coroutine.
+Nel modulo `shared`, `SparqlClient` gestisce le due fonti con le loro regole. La Camera ogni tanto smette di rispondere per qualche secondo, quindi ogni richiesta viene ritentata fino a cinque volte con backoff esponenziale. Il Senato blocca con un 403 chi fa più di una richiesta ogni due secondi circa, e rifiuta request-URI oltre 2047 byte senza accettare il POST: le richieste al Senato passano quindi da una coda sequenziale con intervallo minimo di due secondi, e ogni query viene compattata e misurata prima dell'invio. `Query.kt` raccoglie le query SPARQL e `ParlamentoRepository` le traduce in modelli di dominio (`Votazione`, `Seduta`, `VotoIndividuale`, `Parlamentare`, `Presenze`, `GruppoParlamentare`, `Legislatura`, `Governo`, `MembroGoverno`) e le tiene in cache per legislatura. Lì vengono anche decodificate le entità HTML dei testi (`&agrave;`, `&rsquo;`…). Gli store (`AulaStore`, `VotazioneStore`, `ParlamentariStore`, `ParlamentareStore`, `GruppiStore`, `SchedaAttoStore`, `GovernoStore`, `VersusStore`, `LegislaturaStore`) espongono uno `StateFlow` per Compose e un metodo `observe` per SwiftUI, così Swift non deve maneggiare Flow o coroutine.
 
-Le query non sono inventate: struttura e proprietà sono riprese da [ondata/italianparliament-mcp](https://github.com/ondata/italianparliament-mcp), dove sono state verificate sul campo, comprese le trappole di Virtuoso. Le principali sono queste: le date della Camera sono stringhe `YYYYMMDD` e vanno confrontate dentro `STR()`; i voti della Camera stanno in due named graph e vanno contati con `COUNT(DISTINCT)`; le liste vanno limitate in una subquery prima di agganciare gli `OPTIONAL`.
+Le query non sono inventate: struttura e proprietà sono riprese da [ondata/italianparliament-mcp](https://github.com/ondata/italianparliament-mcp), dove sono state verificate sul campo, comprese le trappole di Virtuoso. Le principali sono queste: le date della Camera sono stringhe `YYYYMMDD` e vanno confrontate dentro `STR()`; i voti della Camera stanno in due named graph e vanno contati con `COUNT(DISTINCT)`; le liste vanno limitate in una subquery prima di agganciare gli `OPTIONAL`. Altre le abbiamo trovate strada facendo: il Virtuoso del Senato conta anche il valore non legato in `COUNT(DISTINCT ?x)`, e il suo firewall rifiuta con un 403 le query con `SUM(IF(…))`, per cui le statistiche del Versus al Senato sono fatte di conteggi semplici.
 
 ## 🧮 Come si calcolano le presenze
 
@@ -186,6 +237,8 @@ I test del modulo condiviso si lanciano con `./gradlew :shared:allTests`. Tra le
 - Al Senato i voti di fiducia non sono collegati al DDL, e la natura del voto (fiducia, voto finale) si deduce dall'etichetta.
 - Le foto dei senatori non si vedono: senato.it le protegge con una verifica anti-bot che solo un browser supera, quindi l'app mostra le iniziali. Il Senato non pubblica nemmeno il titolo di studio.
 - La composizione dei gruppi si ricava dai parlamentari in carica, non da un elenco ufficiale dei gruppi.
+- Il governo viene dai dati della Camera, che non li collega alle schede del Senato: i ministri senatori o non parlamentari non hanno foto e non aprono una scheda. Viceministri e sottosegretari sono nei dati ma l'app non li mostra.
+- Nel Versus le righe del Senato arrivano per ultime (circa 12 secondi per legislatura, per il limite di una richiesta ogni 2 secondi). Le leggi vengono dal Senato, che registra l'iter nei due rami; al Senato fiducie e voti finali si riconoscono dall'oggetto della votazione, e nelle prime legislature la Camera non registra le fiducie (la riga mostra "—").
 
 
 ## 📄 Fonti dei dati
