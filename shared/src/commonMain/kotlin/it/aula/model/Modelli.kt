@@ -266,7 +266,6 @@ data class MembroGoverno(
     val iniziali: String
         get() = "${nome.firstOrNull() ?: ""}${cognome.firstOrNull() ?: ""}".uppercase()
     val fotoUrl: String? get() = deputato?.fotoUrl
-    val cessato: Boolean get() = al != null
 
     /** "dal 23 ottobre 2022 al 4 settembre 2024". */
     val periodo: String?
@@ -280,7 +279,18 @@ data class ComposizioneGoverno(
     val governo: Governo,
     val membri: List<MembroGoverno>,
 ) {
-    private val attuali: List<MembroGoverno> get() = membri.filter { !it.cessato }
+    /**
+     * Ha lasciato prima della fine del governo. Per i governi conclusi la Camera a volte mette la
+     * data di fine a tutti (II Conte), a volte solo a chi è uscito (Draghi): chi arriva fino
+     * alla fine, con qualche giorno di tolleranza, è rimasto.
+     */
+    private fun uscito(m: MembroGoverno): Boolean {
+        val al = m.al ?: return false
+        val fine = governo.fine ?: return true
+        return (Formati.giorniTra(al, fine) ?: 0) > TOLLERANZA_GIORNI
+    }
+
+    private val attuali: List<MembroGoverno> get() = membri.filter { !uscito(it) }
 
     val presidente: MembroGoverno? get() = attuali.firstOrNull { it.ruolo == RuoloGoverno.PRESIDENTE }
     val vicepresidenti: List<MembroGoverno> get() = attuali.filter { it.ruolo == RuoloGoverno.VICEPRESIDENTE }
@@ -295,11 +305,15 @@ data class ComposizioneGoverno(
     val avvicendamenti: List<MembroGoverno>
         get() {
             val ancoraDentro = attuali.mapTo(mutableSetOf()) { it.nomeCompleto }
-            return membri.filter { it.cessato && it.nomeCompleto !in ancoraDentro }
+            return membri.filter { uscito(it) && it.nomeCompleto !in ancoraDentro }
                 .groupBy { it.nomeCompleto }
                 .map { (_, incarichi) -> incarichi.maxBy { it.al.orEmpty() } }
                 .sortedByDescending { it.al }
         }
+
+    private companion object {
+        const val TOLLERANZA_GIORNI = 3
+    }
 }
 
 /** Totali di un ramo in una legislatura, per il confronto tra legislature. */

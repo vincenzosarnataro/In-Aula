@@ -156,7 +156,7 @@ class QueryTest {
         assertEquals("Giancarlo Giorgetti", m.nomeCompleto)
         assertEquals("Ministro dell'Economia e delle finanze", m.incarico)
         assertEquals("2022-10-23", m.dal)
-        assertEquals(false, m.cessato)
+        assertEquals(null, m.al)
         assertEquals("http://dati.camera.it/ocd/deputato.rdf/d50115_19", m.deputato?.uri)
         assertEquals(null, ParlamentoRepository.membroGoverno(riga + ("ruolo" to "SOTTOSEGRETARIO DI STATO")))
 
@@ -199,6 +199,8 @@ class QueryTest {
         assertEquals("3,3", Formati.decimale(3.25))
         assertEquals("1.235", Formati.decimale(1234.6))
         assertEquals("4 anni e 6 mesi", Testi.durata(1664, conclusa = true))
+        assertEquals("4 anni, in corso", Testi.durata(1462, conclusa = false))
+        assertEquals("3 anni e 11 mesi", Testi.durata(1455, conclusa = true))
 
         val stato = it.aula.presentation.VersusState(
             disponibili = listOf(Legislatura(19, "2022-10-13", null), Legislatura(18, "2018-03-23", "2022-10-12")),
@@ -223,5 +225,24 @@ class QueryTest {
         assertEquals(1f, sintesi[1].quotaB)
         assertTrue(sintesi[1].prevaleB)
         assertTrue(stato.caricamento)
+    }
+
+    @Test
+    fun governoConclusoConDateDiFinePerTutti() {
+        // Come nel II Governo Conte: anche chi resta fino alla fine ha la data di fine.
+        val governo = it.aula.model.Governo("g162", "II Governo Conte", "2019-09-04", "2021-02-12")
+        fun membro(cognome: String, ruolo: it.aula.model.RuoloGoverno, al: String) =
+            it.aula.model.MembroGoverno(ruolo, "X", cognome, "Incarico $cognome", dal = "2019-09-05", al = al)
+        val c = it.aula.model.ComposizioneGoverno(
+            governo,
+            listOf(
+                membro("Conte", it.aula.model.RuoloGoverno.PRESIDENTE, "2021-02-12"),
+                membro("Speranza", it.aula.model.RuoloGoverno.MINISTRO, "2021-02-13"),
+                membro("Fioramonti", it.aula.model.RuoloGoverno.MINISTRO, "2019-12-30"),
+            ),
+        )
+        assertEquals("X Conte", c.presidente?.nomeCompleto)
+        assertEquals(listOf("X Speranza"), c.ministri.map { it.nomeCompleto })
+        assertEquals(listOf("X Fioramonti"), c.avvicendamenti.map { it.nomeCompleto })
     }
 }

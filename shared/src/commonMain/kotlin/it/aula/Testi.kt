@@ -239,8 +239,10 @@ object Testi {
     const val inSintesi = "In sintesi"
     const val durata = "Durata"
     fun durata(giorni: Int, conclusa: Boolean): String {
-        val anni = giorni / 365
-        val mesi = (giorni % 365) / 30
+        // Prima i mesi interi, poi anni e mesi: con giorni / 365 e resto / 30 usciva "3 anni e 12 mesi".
+        val mesiTotali = (giorni * 12 / 365.25).toInt()
+        val anni = mesiTotali / 12
+        val mesi = mesiTotali % 12
         val testo = listOfNotNull(
             anni.takeIf { it > 0 }?.let { if (it == 1) "1 anno" else "$it anni" },
             mesi.takeIf { it > 0 }?.let { if (it == 1) "1 mese" else "$it mesi" },
