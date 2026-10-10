@@ -54,7 +54,10 @@ struct AulaView: View {
         }
         .listStyle(.plain)
         .navigationTitle(testi.inAula)
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { PulsanteTema() } }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) { PulsanteLegislatura() }
+            ToolbarItem(placement: .topBarTrailing) { PulsanteTema() }
+        }
         .searchable(
             text: Binding(get: { stato.ricerca }, set: { store.cerca(testo: $0) }),
             prompt: testi.cercaVotazioni

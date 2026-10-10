@@ -6,7 +6,9 @@ import it.aula.model.Atto
 import it.aula.model.Parlamentare
 import it.aula.model.Votazione
 import it.aula.presentation.AulaStore
+import it.aula.presentation.GovernoStore
 import it.aula.presentation.GruppiStore
+import it.aula.presentation.LegislaturaStore
 import it.aula.presentation.ParlamentareStore
 import it.aula.presentation.ParlamentariStore
 import it.aula.presentation.SchedaAttoStore
@@ -24,10 +26,15 @@ object AppGraph {
         ParlamentoRepository(SparqlClient(SparqlClient.defaultHttpClient(log = logChiamate)))
     }
 
+    /** Legislatura salvata dall'app (null = la corrente): da chiamare prima di creare gli store. */
+    fun ripristinaLegislatura(numero: Int?) = repository.scegliLegislatura(numero)
+
+    fun legislaturaStore() = LegislaturaStore(repository)
     fun aulaStore() = AulaStore(repository)
     fun votazioneStore(votazione: Votazione) = VotazioneStore(repository, votazione)
     fun parlamentariStore() = ParlamentariStore(repository)
     fun gruppiStore() = GruppiStore(repository)
+    fun governoStore() = GovernoStore(repository)
     fun parlamentareStore(parlamentare: Parlamentare) = ParlamentareStore(repository, parlamentare)
     fun schedaAttoStore(atto: Atto) = SchedaAttoStore(repository, atto)
 }

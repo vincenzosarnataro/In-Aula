@@ -94,7 +94,10 @@ fun GruppiContenuto(
             } else {
                 null
             },
-            actions = { PulsanteTema() },
+            actions = {
+                PulsanteLegislatura()
+                PulsanteTema()
+            },
             scrollBehavior = scrollBehavior,
         )
         SelettoreRamo(stato.ramo, onRamo, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
@@ -113,7 +116,7 @@ fun GruppiContenuto(
                         }
                         Spacer(Modifier.height(12.dp))
                         Text(
-                            Testi.notaGruppi,
+                            stato.nota,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

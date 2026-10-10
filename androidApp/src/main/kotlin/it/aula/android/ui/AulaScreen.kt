@@ -83,7 +83,10 @@ fun AulaContenuto(
         LargeFlexibleTopAppBar(
             title = { Text(Testi.inAula) },
             subtitle = { Text(Testi.sottotitoloAula(stato.ramo)) },
-            actions = { PulsanteTema() },
+            actions = {
+                PulsanteLegislatura()
+                PulsanteTema()
+            },
             scrollBehavior = scrollBehavior,
         )
         SelettoreRamo(

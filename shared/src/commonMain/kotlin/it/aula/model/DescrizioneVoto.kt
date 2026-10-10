@@ -116,18 +116,60 @@ object DescrizioneVoto {
         )
     }
 
-    /** Decodifica le entità HTML, anche quelle codificate due volte ("&amp;#39;"). */
+    /**
+     * Decodifica le entità HTML, anche quelle codificate due volte ("&amp;#39;"): numeriche
+     * ("&#39;", "&#xE0;") e con nome ("&agrave;", "&rsquo;"). Il punto e virgola finale a volte
+     * manca nei dati ("&egrave "): si accetta se dopo il nome non continua una parola.
+     */
     fun decodificaEntita(testo: String): String {
+        if ('&' !in testo) return testo
         var t = testo
         repeat(2) {
-            t = t.replace("&amp;", "&")
-                .replace("&quot;", "\"")
-                .replace("&lt;", "<")
-                .replace("&gt;", ">")
-                .replace("&apos;", "'")
-                .replace(Regex("&#(\\d+);")) { m -> m.groupValues[1].toIntOrNull()?.toChar()?.toString() ?: m.value }
+            t = ENTITA.replace(t) { m ->
+                val nome = m.groupValues[1]
+                val codice = when {
+                    nome.startsWith("#x", ignoreCase = true) -> nome.drop(2).toIntOrNull(16)
+                    nome.startsWith("#") -> nome.drop(1).toIntOrNull()
+                    else -> ENTITA_CON_NOME[nome]
+                }
+                when {
+                    codice == null || codice !in 1..0xFFFF -> m.value
+                    // Senza ";" solo le entità con nome: "&#39" da solo è troppo ambiguo.
+                    m.groupValues[2].isEmpty() && nome.startsWith("#") -> m.value
+                    else -> codice.toChar().toString()
+                }
+            }
         }
         return t
+    }
+
+    private val ENTITA = Regex("&(#[xX][0-9a-fA-F]+|#\\d+|[a-zA-Z]+\\d*)(;|(?![a-zA-Z0-9]))")
+
+    private val ENTITA_CON_NOME: Map<String, Int> = buildMap {
+        put("amp", '&'.code); put("quot", '"'.code); put("lt", '<'.code); put("gt", '>'.code)
+        put("apos", '\''.code); put("nbsp", 0xA0)
+        put("lsquo", 0x2018); put("rsquo", 0x2019); put("sbquo", 0x201A)
+        put("ldquo", 0x201C); put("rdquo", 0x201D); put("bdquo", 0x201E)
+        put("laquo", 0xAB); put("raquo", 0xBB)
+        put("ndash", 0x2013); put("mdash", 0x2014); put("hellip", 0x2026); put("bull", 0x2022)
+        put("euro", 0x20AC); put("deg", 0xB0); put("sect", 0xA7); put("para", 0xB6)
+        put("ordf", 0xAA); put("ordm", 0xBA); put("middot", 0xB7); put("copy", 0xA9); put("reg", 0xAE)
+        put("szlig", 0xDF)
+        // Lettere accentate: "&agrave;" → "à", "&Egrave;" → "È".
+        val accentate = mapOf(
+            "grave" to ("aeiou" to "àèìòù"),
+            "acute" to ("aeiouy" to "áéíóúý"),
+            "circ" to ("aeiou" to "âêîôû"),
+            "uml" to ("aeiouy" to "äëïöüÿ"),
+            "tilde" to ("ano" to "ãñõ"),
+        )
+        for ((segno, lettere) in accentate) {
+            lettere.first.zip(lettere.second).forEach { (base, accentata) ->
+                put("$base$segno", accentata.code)
+                put("${base.uppercaseChar()}$segno", accentata.uppercaseChar().code)
+            }
+        }
+        put("ccedil", 'ç'.code); put("Ccedil", 'Ç'.code)
     }
 
     private fun emendamenti(t: String): String {

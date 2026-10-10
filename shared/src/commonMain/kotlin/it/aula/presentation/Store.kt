@@ -17,7 +17,7 @@ import kotlinx.coroutines.launch
  * SwiftUI via [observe], che non richiede di toccare Flow/coroutine da Swift.
  */
 abstract class Store<S : Any>(iniziale: S) {
-    protected val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    internal val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val _state = MutableStateFlow(iniziale)
     val state: StateFlow<S> = _state.asStateFlow()
 

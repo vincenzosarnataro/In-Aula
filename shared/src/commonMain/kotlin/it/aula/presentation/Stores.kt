@@ -7,12 +7,15 @@ import it.aula.model.Adesione
 import it.aula.model.AssentiGruppo
 import it.aula.model.AssenzeDecisive
 import it.aula.model.Atto
+import it.aula.model.ComposizioneGoverno
 import it.aula.model.ConteggioVoto
 import it.aula.model.DettaglioVotazione
 import it.aula.model.Disposizione
 import it.aula.model.Emiciclo
 import it.aula.model.Esito
+import it.aula.model.Governo
 import it.aula.model.GruppoParlamentare
+import it.aula.model.Legislatura
 import it.aula.model.Parlamentare
 import it.aula.model.Presenze
 import it.aula.model.ProfiloParlamentare
@@ -24,7 +27,48 @@ import it.aula.model.Votazione
 import it.aula.model.VotoIndividuale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
+
+// ------------------------------------------------------------------ Legislatura
+
+data class LegislaturaState(
+    /** Dalla più recente; vuota finché non è caricata. */
+    val disponibili: List<Legislatura> = emptyList(),
+    /** null = quella in corso. */
+    val scelta: Int? = null,
+) {
+    val attiva: Legislatura?
+        get() = disponibili.firstOrNull { it.numero == scelta } ?: disponibili.firstOrNull()
+}
+
+/** La legislatura su cui lavora tutta l'app. Le tab osservano il repository e ricaricano. */
+class LegislaturaStore(private val repo: ParlamentoRepository) :
+    Store<LegislaturaState>(LegislaturaState(scelta = repo.legislaturaScelta.value)) {
+
+    init {
+        scope.launch {
+            val disponibili = repo.legislature()
+            aggiorna { it.copy(disponibili = disponibili) }
+        }
+        scope.launch { repo.legislaturaScelta.collect { n -> aggiorna { it.copy(scelta = n) } } }
+    }
+
+    /**
+     * Sceglie una legislatura. Restituisce il valore da salvare tra le preferenze: null se è
+     * quella in corso, così all'inizio della prossima l'app la segue da sola.
+     */
+    fun scegli(numero: Int): Int? {
+        val valore = numero.takeIf { it != current().disponibili.firstOrNull()?.numero }
+        repo.scegliLegislatura(valore)
+        return valore
+    }
+}
+
+/** Esegue [azione] a ogni cambio di legislatura (non per quella iniziale). */
+private fun <S : Any> Store<S>.alCambioDiLegislatura(repo: ParlamentoRepository, azione: () -> Unit) {
+    scope.launch { repo.legislaturaScelta.drop(1).collect { azione() } }
+}
 
 // ------------------------------------------------------------------ Aula (sedute e votazioni)
 
@@ -107,6 +151,11 @@ class AulaStore(private val repo: ParlamentoRepository) : Store<AulaState>(AulaS
 
     init {
         carica(azzera = true)
+        alCambioDiLegislatura(repo) {
+            votazioni.clear()
+            aggiorna { it.copy(sedute = emptyList(), errore = null, tema = null, altreDisponibili = true) }
+            carica(azzera = true)
+        }
     }
 
     fun selezionaRamo(ramo: Ramo) {
@@ -322,6 +371,8 @@ data class ParlamentariState(
     val tutti: List<Parlamentare> = emptyList(),
     val ricerca: String = "",
     val soloCambi: Boolean = false,
+    /** Legislatura conclusa: l'elenco è dei parlamentari a fine legislatura. */
+    val conclusa: Boolean = false,
     val caricamento: Boolean = false,
     val errore: String? = null,
 ) {
@@ -336,6 +387,8 @@ data class ParlamentariState(
 
     /** Quanti parlamentari in carica hanno cambiato gruppo in questa legislatura. */
     val conCambi: Int get() = tutti.count { it.cambiDiGruppo > 0 }
+
+    val sottotitolo: String get() = Testi.membriInElenco(visibili.size, conclusa)
 }
 
 class ParlamentariStore(private val repo: ParlamentoRepository) :
@@ -345,6 +398,10 @@ class ParlamentariStore(private val repo: ParlamentoRepository) :
 
     init {
         carica(forza = false)
+        alCambioDiLegislatura(repo) {
+            aggiorna { it.copy(tutti = emptyList(), soloCambi = false, errore = null) }
+            carica(forza = false)
+        }
     }
 
     fun selezionaRamo(ramo: Ramo) {
@@ -366,7 +423,8 @@ class ParlamentariStore(private val repo: ParlamentoRepository) :
             aggiorna { it.copy(caricamento = true, errore = null) }
             try {
                 val elenco = repo.parlamentari(ramo, forza)
-                aggiorna { if (it.ramo != ramo) it else it.copy(tutti = elenco, caricamento = false) }
+                val conclusa = repo.legislatura().conclusa
+                aggiorna { if (it.ramo != ramo) it else it.copy(tutti = elenco, conclusa = conclusa, caricamento = false) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -382,10 +440,14 @@ data class GruppiState(
     val ramo: Ramo = Ramo.CAMERA,
     /** Dal gruppo con più seggi. */
     val gruppi: List<GruppoParlamentare> = emptyList(),
+    /** Legislatura conclusa: la composizione è quella a fine legislatura. */
+    val conclusa: Boolean = false,
     val caricamento: Boolean = false,
     val errore: String? = null,
 ) {
     val seggiTotali: Int get() = gruppi.firstOrNull()?.seggiTotali ?: 0
+
+    val nota: String get() = Testi.notaGruppi(conclusa)
 
     fun gruppo(nome: String): GruppoParlamentare? = gruppi.firstOrNull { it.nome == nome }
 }
@@ -396,6 +458,10 @@ class GruppiStore(private val repo: ParlamentoRepository) : Store<GruppiState>(G
 
     init {
         carica(forza = false)
+        alCambioDiLegislatura(repo) {
+            aggiorna { it.copy(gruppi = emptyList(), errore = null) }
+            carica(forza = false)
+        }
     }
 
     fun selezionaRamo(ramo: Ramo) {
@@ -413,7 +479,8 @@ class GruppiStore(private val repo: ParlamentoRepository) : Store<GruppiState>(G
             aggiorna { it.copy(caricamento = true, errore = null) }
             try {
                 val gruppi = repo.parlamentari(ramo, forza).inGruppi(ramo)
-                aggiorna { if (it.ramo != ramo) it else it.copy(gruppi = gruppi, caricamento = false) }
+                val conclusa = repo.legislatura().conclusa
+                aggiorna { if (it.ramo != ramo) it else it.copy(gruppi = gruppi, conclusa = conclusa, caricamento = false) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -522,3 +589,58 @@ class SchedaAttoStore(
     }
 }
 
+
+// ------------------------------------------------------------------ Governo
+
+data class GovernoState(
+    /** Governi della legislatura, dal più recente. */
+    val governi: List<Governo> = emptyList(),
+    val scelto: Governo? = null,
+    val composizione: ComposizioneGoverno? = null,
+    val caricamento: Boolean = false,
+    val errore: String? = null,
+) {
+    /** La composizione mostrata appartiene al governo scelto (non a quello di prima). */
+    val composizioneScelta: ComposizioneGoverno?
+        get() = composizione?.takeIf { it.governo.uri == scelto?.uri }
+}
+
+class GovernoStore(private val repo: ParlamentoRepository) : Store<GovernoState>(GovernoState()) {
+
+    private var job: Job? = null
+
+    init {
+        carica()
+        alCambioDiLegislatura(repo) {
+            aggiorna { GovernoState() }
+            carica()
+        }
+    }
+
+    fun scegli(governo: Governo) {
+        if (governo.uri == current().scelto?.uri) return
+        aggiorna { it.copy(scelto = governo, errore = null) }
+        carica()
+    }
+
+    fun ricarica() = carica()
+
+    /** Elenco dei governi (se manca) e composizione di quello scelto, di default il più recente. */
+    private fun carica() {
+        job?.cancel()
+        job = scope.launch {
+            aggiorna { it.copy(caricamento = true, errore = null) }
+            try {
+                val governi = current().governi.ifEmpty { repo.governi() }
+                val scelto = current().scelto ?: governi.firstOrNull()
+                aggiorna { it.copy(governi = governi, scelto = scelto) }
+                val composizione = scelto?.let { repo.composizioneGoverno(it) }
+                aggiorna { it.copy(composizione = composizione, caricamento = false) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                aggiorna { it.copy(caricamento = false, errore = e.messaggio()) }
+            }
+        }
+    }
+}

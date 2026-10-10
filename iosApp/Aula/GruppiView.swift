@@ -28,7 +28,7 @@ struct GruppiView: View {
                 Section {
                     VStack(spacing: 12) {
                         TortaComposizione(gruppi: stato.gruppi, totale: Int(stato.seggiTotali))
-                        Text(testi.notaGruppi)
+                        Text(stato.nota)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -57,7 +57,10 @@ struct GruppiView: View {
         }
         .listStyle(.plain)
         .navigationTitle(testi.gruppiParlamentari)
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { PulsanteTema() } }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) { PulsanteLegislatura() }
+            ToolbarItem(placement: .topBarTrailing) { PulsanteTema() }
+        }
         .refreshable { store.ricarica() }
     }
 }

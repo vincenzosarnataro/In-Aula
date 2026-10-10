@@ -4,8 +4,13 @@ import it.aula.Testi
 import it.aula.data.sparql.Riga
 import it.aula.data.sparql.SparqlClient
 import it.aula.model.Atto
+import it.aula.model.ComposizioneGoverno
+import it.aula.model.Governo
+import it.aula.model.MembroGoverno
+import it.aula.model.RuoloGoverno
 import it.aula.model.Adesione
 import it.aula.model.FaseIter
+import it.aula.model.Legislatura
 import it.aula.model.Relatore
 import it.aula.model.ProfiloParlamentare
 import it.aula.model.SchedaAtto
@@ -23,41 +28,67 @@ import it.aula.model.Votazione
 import it.aula.model.VotoIndividuale
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
  * Unico punto di accesso ai dati. Tutto avviene sul device: le query sono pensate per
  * restare leggere (una votazione, un parlamentare, una pagina di lista alla volta).
- * Cache in memoria per ciò che cambia di rado (legislatura, elenchi, gruppi).
+ * Cache in memoria per ciò che cambia di rado (legislature, elenchi, gruppi), divisa per
+ * legislatura: cambiarla non obbliga a svuotarla e i caricamenti in corso non la sporcano.
  */
 class ParlamentoRepository(private val sparql: SparqlClient = SparqlClient()) {
 
     private val mutex = Mutex()
-    private var legislatura: Int? = null
-    private val cacheParlamentari = mutableMapOf<Ramo, List<Parlamentare>>()
+    private var legislature: List<Legislatura>? = null
+    private val _legislaturaScelta = MutableStateFlow<Int?>(null)
+    private val cacheParlamentari = mutableMapOf<Pair<Int, Ramo>, List<Parlamentare>>()
     private val cacheDettagli = mutableMapOf<String, DettaglioVotazione>()
-    private val cacheAdesioni = mutableMapOf<Ramo, Map<String, List<Adesione>>>()
-    private val cacheProfili = mutableMapOf<String, ProfiloParlamentare>()
+    private val cacheAdesioni = mutableMapOf<Pair<Int, Ramo>, Map<String, List<Adesione>>>()
+    private val cacheProfili = mutableMapOf<Pair<Int, String>, ProfiloParlamentare>()
+    private val cacheGoverni = mutableMapOf<Int, List<Governo>>()
+    private val cacheComposizioni = mutableMapOf<Pair<Int, String>, ComposizioneGoverno>()
 
     /** Parlamentari e Gruppi chiedono lo stesso elenco all'avvio: lo si carica una volta sola. */
     private val caricamentoParlamentari = Ramo.entries.associateWith { Mutex() }
 
-    suspend fun legislaturaCorrente(): Int = mutex.withLock {
-        legislatura ?: run {
-            val n = runCatching {
-                sparql.camera(CameraQuery.legislaturaCorrente).firstOrNull()?.get("s")
-                    ?.substringAfterLast("repubblica_")?.toIntOrNull()
-            }.getOrNull() ?: LEGISLATURA_DI_RISERVA
-            legislatura = n
-            n
+    /** Legislatura scelta dall'utente; null = quella in corso. Gli store la osservano per ricaricare. */
+    val legislaturaScelta: StateFlow<Int?> = _legislaturaScelta.asStateFlow()
+
+    fun scegliLegislatura(numero: Int?) {
+        _legislaturaScelta.value = numero
+    }
+
+    /** Le legislature con votazioni negli open data, dalla più recente. In cache. */
+    suspend fun legislature(): List<Legislatura> = mutex.withLock {
+        legislature ?: run {
+            val tutte = runCatching {
+                sparql.camera(CameraQuery.legislature).mapNotNull(::legislatura)
+            }.getOrDefault(emptyList()).distinctBy { it.numero }
+            val elenco = tutte.filter { it.numero >= PRIMA_LEGISLATURA_CON_VOTI }
+                .sortedByDescending { it.numero }
+                .ifEmpty { (LEGISLATURA_DI_RISERVA downTo PRIMA_LEGISLATURA_CON_VOTI).map { Legislatura(it) } }
+            legislature = elenco
+            elenco
         }
+    }
+
+    suspend fun legislaturaCorrente(): Int = legislature().first().numero
+
+    /** La legislatura su cui lavorano liste e schede: quella scelta o, in mancanza, la corrente. */
+    suspend fun legislatura(): Legislatura {
+        val tutte = legislature()
+        val scelta = _legislaturaScelta.value
+        return tutte.firstOrNull { it.numero == scelta } ?: scelta?.let { Legislatura(it) } ?: tutte.first()
     }
 
     // ---------------------------------------------------------------- Votazioni e sedute
 
     suspend fun votazioni(ramo: Ramo, limit: Int = 120, offset: Int = 0): List<Votazione> {
-        val leg = legislaturaCorrente()
+        val leg = legislatura().numero
         return when (ramo) {
             Ramo.CAMERA -> conAttiCamera(
                 sparql.camera(CameraQuery.votazioni(leg, limit, offset)).map(::votazioneCamera).distinctBy { it.uri },
@@ -126,7 +157,7 @@ class ParlamentoRepository(private val sparql: SparqlClient = SparqlClient()) {
      * non si riescono a caricare restano vuote; senza votazioni né dettagli è un errore.
      */
     suspend fun schedaAtto(atto: Atto): SchedaAtto = coroutineScope {
-        val leg = legislaturaCorrente()
+        val leg = legislatura().numero
         val fase = atto.numero.replace(" ", "")
         val iterRighe = runCatching {
             val fasi = if (atto.ramo == Ramo.CAMERA) listOf(fase, fase.substringBefore('-')) else listOf(fase)
@@ -235,34 +266,62 @@ class ParlamentoRepository(private val sparql: SparqlClient = SparqlClient()) {
 
     // ---------------------------------------------------------------- Gruppi parlamentari
 
-    /** Storia dei gruppi di un parlamentare nella legislatura corrente, dalla prima adesione. */
+    /** Storia dei gruppi di un parlamentare nella legislatura scelta, dalla prima adesione. */
     suspend fun storiaGruppi(parlamentare: Parlamentare): List<Adesione> =
-        adesioni(parlamentare.ramo)[parlamentare.uri].orEmpty()
+        adesioni(parlamentare.ramo, legislatura().numero)[parlamentare.uri].orEmpty()
 
     /** Nascita, studi, professione ed elezione. In cache. */
     suspend fun profilo(parlamentare: Parlamentare): ProfiloParlamentare {
-        cacheProfili[parlamentare.uri]?.let { return it }
+        // Gli URI dei senatori sono gli stessi in ogni legislatura, il mandato no.
+        val leg = legislatura().numero
+        val chiave = leg to parlamentare.uri
+        cacheProfili[chiave]?.let { return it }
         val profilo = when (parlamentare.ramo) {
             Ramo.CAMERA -> profiloCamera(sparql.camera(CameraQuery.profilo(parlamentare.uri)).firstOrNull())
-            Ramo.SENATO -> {
-                val leg = legislaturaCorrente()
+            Ramo.SENATO ->
                 profiloSenato(parlamentare.uri, leg, sparql.senato(SenatoQuery.profilo(parlamentare.uri, leg)).firstOrNull())
-            }
         }
-        cacheProfili[parlamentare.uri] = profilo
+        cacheProfili[chiave] = profilo
         return profilo
     }
 
     /** Adesioni di tutti i parlamentari di un ramo, già ripulite e unite. In cache. */
-    private suspend fun adesioni(ramo: Ramo): Map<String, List<Adesione>> {
-        cacheAdesioni[ramo]?.let { return it }
-        val leg = legislaturaCorrente()
+    private suspend fun adesioni(ramo: Ramo, leg: Int): Map<String, List<Adesione>> {
+        cacheAdesioni[leg to ramo]?.let { return it }
         val mappa = when (ramo) {
             Ramo.CAMERA -> adesioniCamera(sparql.camera(CameraQuery.adesioniGruppi(leg)))
             Ramo.SENATO -> adesioniSenato(sparql.senato(SenatoQuery.adesioniGruppi(leg)))
         }
-        cacheAdesioni[ramo] = mappa
+        cacheAdesioni[leg to ramo] = mappa
         return mappa
+    }
+
+    // ---------------------------------------------------------------- Governo
+
+    /** Governi della legislatura scelta, dal più recente. In cache. */
+    suspend fun governi(): List<Governo> {
+        val leg = legislatura().numero
+        cacheGoverni[leg]?.let { return it }
+        val elenco = sparql.camera(CameraQuery.governi(leg))
+            .map(::governo)
+            .distinctBy { it.uri }
+            .sortedByDescending { it.inizio }
+        cacheGoverni[leg] = elenco
+        return elenco
+    }
+
+    /** Presidente, vicepresidenti e ministri di un governo. In cache. */
+    suspend fun composizioneGoverno(governo: Governo): ComposizioneGoverno {
+        // La legislatura serve per agganciare i deputati: un governo può stare a cavallo di due.
+        val leg = legislatura().numero
+        val chiave = leg to governo.uri
+        cacheComposizioni[chiave]?.let { return it }
+        val membri = sparql.camera(CameraQuery.membriGoverno(governo.uri, leg))
+            .mapNotNull { membroGoverno(it) }
+            // Più righe per lo stesso incarico se la persona ha più mandati: si tiene la prima.
+            .distinctBy { Triple(it.incarico, it.cognome, it.dal) }
+            .sortedWith(compareBy({ chiaveIncarico(it.incarico) }, { it.dal }))
+        return ComposizioneGoverno(governo, membri).also { cacheComposizioni[chiave] = it }
     }
 
     // ---------------------------------------------------------------- Mappatura
@@ -336,31 +395,41 @@ class ParlamentoRepository(private val sparql: SparqlClient = SparqlClient()) {
         caricamentoParlamentari.getValue(ramo).withLock { caricaParlamentari(ramo, forza) }
 
     private suspend fun caricaParlamentari(ramo: Ramo, forza: Boolean): List<Parlamentare> {
-        if (!forza) cacheParlamentari[ramo]?.let { return it }
-        val leg = legislaturaCorrente()
+        val legislatura = legislatura()
+        val leg = legislatura.numero
+        if (!forza) cacheParlamentari[leg to ramo]?.let { return it }
         val elenco = when (ramo) {
             Ramo.CAMERA -> coroutineScope {
                 val gruppi = async {
                     runCatching { gruppiDeputatiAttuali(sparql.camera(CameraQuery.adesioniGruppi(leg))) }
                         .getOrDefault(emptyMap())
                 }
-                val righe = sparql.camera(CameraQuery.deputatiInCarica(leg))
+                val fine = legislatura.fine?.filter(Char::isDigit)
+                val righe = sparql.camera(CameraQuery.deputatiInCarica(leg, fine))
                 val mappa = gruppi.await()
                 righe.map { parlamentare(it, Ramo.CAMERA, mappa) }
             }
             Ramo.SENATO -> {
-                val righe = sparql.senato(SenatoQuery.senatoriInCarica(leg))
-                val mappa = runCatching { mappaGruppiSenato(sparql.senato(SenatoQuery.gruppiAttuali)) }
-                    .getOrDefault(emptyMap())
+                val righe = sparql.senato(SenatoQuery.senatoriInCarica(leg, legislatura.fine))
+                // gruppiAttuali non distingue le legislature: per quelle concluse il gruppo
+                // si prende dall'ultima adesione, più sotto.
+                val mappa = if (legislatura.conclusa) emptyMap() else {
+                    runCatching { mappaGruppiSenato(sparql.senato(SenatoQuery.gruppiAttuali)) }
+                        .getOrDefault(emptyMap())
+                }
                 righe.map { parlamentare(it, Ramo.SENATO, mappa) }
             }
         }.distinctBy { it.uri }
         // Cambi di gruppo: facoltativi, l'elenco resta valido anche senza.
-        val storie = runCatching { adesioni(ramo) }.getOrDefault(emptyMap())
+        val storie = runCatching { adesioni(ramo, leg) }.getOrDefault(emptyMap())
         val conCambi = elenco.map { p ->
-            p.copy(cambiDiGruppo = ((storie[p.uri]?.size ?: 1) - 1).coerceAtLeast(0))
+            val storia = storie[p.uri]
+            p.copy(
+                gruppo = p.gruppo.ifBlank { storia?.lastOrNull()?.gruppo.orEmpty() },
+                cambiDiGruppo = ((storia?.size ?: 1) - 1).coerceAtLeast(0),
+            )
         }
-        cacheParlamentari[ramo] = conCambi
+        cacheParlamentari[leg to ramo] = conCambi
         return conCambi
     }
 
@@ -395,7 +464,7 @@ class ParlamentoRepository(private val sparql: SparqlClient = SparqlClient()) {
     }
 
     private suspend fun presenzeSenato(uri: String): Presenze = coroutineScope {
-        val leg = legislaturaCorrente()
+        val leg = legislatura().numero
         val conteggi = SenatoQuery.categorie.map { prop ->
             async {
                 prop to (sparql.senato(SenatoQuery.presenzeCategoria(uri, prop, leg))
@@ -507,6 +576,75 @@ class ParlamentoRepository(private val sparql: SparqlClient = SparqlClient()) {
 
     companion object {
         const val LEGISLATURA_DI_RISERVA = 19
+
+        /** "I Governo Meloni (21.10.2022)", dc:date "20221021" → I Governo Meloni, dal 2022-10-21. */
+        internal fun governo(r: Riga): Governo {
+            val date = r["d"].orEmpty()
+            return Governo(
+                uri = r["g"].orEmpty(),
+                nome = pulisciGruppo(r["titolo"].orEmpty()),
+                inizio = Formati.normalizzaData(date.substringBefore('-')).ifBlank { null },
+                fine = Formati.normalizzaData(date.substringAfter('-', "")).ifBlank { null },
+            )
+        }
+
+        internal fun membroGoverno(r: Riga): MembroGoverno? {
+            val ruolo = when (r["ruolo"]) {
+                "PRESIDENTE DEL CONSIGLIO" -> RuoloGoverno.PRESIDENTE
+                "VICEPRESIDENTE DEL CONSIGLIO" -> RuoloGoverno.VICEPRESIDENTE
+                "MINISTRO" -> RuoloGoverno.MINISTRO
+                "MINISTRO SENZA PORTAFOGLIO" -> RuoloGoverno.MINISTRO_SENZA_PORTAFOGLIO
+                else -> return null
+            }
+            val nome = r["nome"].orEmpty().capitalizzaParole()
+            val cognome = r["cognome"].orEmpty().capitalizzaParole()
+            val deputato = r["dep"]?.takeIf { it.isNotBlank() }?.let { uri ->
+                Parlamentare(
+                    uri = uri,
+                    ramo = Ramo.CAMERA,
+                    nome = nome,
+                    cognome = cognome,
+                    gruppo = "",
+                    fotoUrl = r["foto"]?.takeIf { it.isNotBlank() }?.let(::fotoCamera),
+                )
+            }
+            return MembroGoverno(
+                ruolo = ruolo,
+                nome = nome,
+                cognome = cognome,
+                // Stesse date in coda delle etichette dei gruppi: "Ministro della Difesa (23.10.2022)".
+                incarico = pulisciGruppo(r["incarico"].orEmpty()),
+                delega = r["delega"]?.let(::pulisciGruppo)?.takeIf { it.isNotBlank() },
+                dal = r["inizio"]?.let(Formati::normalizzaData)?.ifBlank { null },
+                al = r["fine"]?.let(Formati::normalizzaData)?.ifBlank { null },
+                interim = r["interim"] == "1",
+                deputato = deputato,
+            )
+        }
+
+        private val PREFISSO_INCARICO = Regex(
+            "^(ministr[oa]|vicepresidente|presidente)\\s+(per\\s+)?" +
+                "(dell'|all'|nell'|l'|gl'|(degli|della|delle|dello|dei|del|alla|alle|agli|ai|al|gli|il|la|le|lo|i)\\s+)?",
+            RegexOption.IGNORE_CASE,
+        )
+
+        /** "Ministro dell'Economia e delle finanze" → "economia e delle finanze": per ordinare per dicastero. */
+        internal fun chiaveIncarico(incarico: String): String =
+            incarico.replace(PREFISSO_INCARICO, "").lowercase()
+
+        /** Le votazioni negli open data di Camera e Senato partono dalla XIII legislatura. */
+        const val PRIMA_LEGISLATURA_CON_VOTI = 13
+
+        /** ".../repubblica_18" con dc:date "20180323-20221012" → XVIII, 2018-03-23 / 2022-10-12. */
+        internal fun legislatura(r: Riga): Legislatura? {
+            val numero = r["s"]?.substringAfterLast("repubblica_")?.toIntOrNull() ?: return null
+            val date = r["d"].orEmpty()
+            return Legislatura(
+                numero = numero,
+                inizio = Formati.normalizzaData(date.substringBefore('-')).ifBlank { null },
+                fine = Formati.normalizzaData(date.substringAfter('-', "")).ifBlank { null },
+            )
+        }
 
         internal fun tipoVotoCamera(tipo: String, descrizione: String?): TipoVoto = when (tipo) {
             "Favorevole" -> TipoVoto.FAVOREVOLE

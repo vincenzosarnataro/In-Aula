@@ -222,6 +222,124 @@ data class DettaglioVotazione(
     val nota: String?,
 )
 
+enum class RuoloGoverno {
+    PRESIDENTE,
+    VICEPRESIDENTE,
+    MINISTRO,
+    MINISTRO_SENZA_PORTAFOGLIO,
+}
+
+/** Date ISO; [fine] è null per il governo in carica. */
+data class Governo(
+    val uri: String,
+    /** "I Governo Meloni". */
+    val nome: String,
+    val inizio: String?,
+    val fine: String?,
+) {
+    val inCarica: Boolean get() = fine == null
+
+    /** "dal 21 ottobre 2022", "12 febbraio 2021 – 21 ottobre 2022". */
+    val periodo: String?
+        get() {
+            val da = inizio?.let(Formati::dataEstesa) ?: return null
+            return if (fine != null) "$da – ${Formati.dataEstesa(fine)}" else Testi.dal(da)
+        }
+}
+
+data class MembroGoverno(
+    val ruolo: RuoloGoverno,
+    val nome: String,
+    val cognome: String,
+    /** "Ministro della Difesa". */
+    val incarico: String,
+    /** Funzioni aggiuntive: "con funzione di Segretario del Consiglio dei ministri". */
+    val delega: String? = null,
+    /** Date ISO; [al] è null se è rimasto fino alla fine del governo (o è ancora in carica). */
+    val dal: String? = null,
+    val al: String? = null,
+    val interim: Boolean = false,
+    /** La scheda da deputato nella legislatura, se lo è. */
+    val deputato: Parlamentare? = null,
+) {
+    val nomeCompleto: String get() = "$nome $cognome".trim()
+    val iniziali: String
+        get() = "${nome.firstOrNull() ?: ""}${cognome.firstOrNull() ?: ""}".uppercase()
+    val fotoUrl: String? get() = deputato?.fotoUrl
+    val cessato: Boolean get() = al != null
+
+    /** "dal 23 ottobre 2022 al 4 settembre 2024". */
+    val periodo: String?
+        get() {
+            val da = dal?.let(Formati::dataEstesa) ?: return null
+            return if (al != null) Testi.dalAl(da, Formati.dataEstesa(al)) else Testi.dal(da)
+        }
+}
+
+data class ComposizioneGoverno(
+    val governo: Governo,
+    val membri: List<MembroGoverno>,
+) {
+    private val attuali: List<MembroGoverno> get() = membri.filter { !it.cessato }
+
+    val presidente: MembroGoverno? get() = attuali.firstOrNull { it.ruolo == RuoloGoverno.PRESIDENTE }
+    val vicepresidenti: List<MembroGoverno> get() = attuali.filter { it.ruolo == RuoloGoverno.VICEPRESIDENTE }
+    val ministri: List<MembroGoverno> get() = attuali.filter { it.ruolo == RuoloGoverno.MINISTRO }
+    val senzaPortafoglio: List<MembroGoverno>
+        get() = attuali.filter { it.ruolo == RuoloGoverno.MINISTRO_SENZA_PORTAFOGLIO }
+
+    /**
+     * Chi ha lasciato il governo prima della sua fine, con l'ultimo incarico, dal più recente.
+     * Restano fuori i cambi di nome dei ministeri e gli interim di chi è ancora nel governo.
+     */
+    val avvicendamenti: List<MembroGoverno>
+        get() {
+            val ancoraDentro = attuali.mapTo(mutableSetOf()) { it.nomeCompleto }
+            return membri.filter { it.cessato && it.nomeCompleto !in ancoraDentro }
+                .groupBy { it.nomeCompleto }
+                .map { (_, incarichi) -> incarichi.maxBy { it.al.orEmpty() } }
+                .sortedByDescending { it.al }
+        }
+}
+
+/** Legislatura della Repubblica. Date ISO; [fine] è null per quella in corso. */
+data class Legislatura(
+    val numero: Int,
+    val inizio: String? = null,
+    val fine: String? = null,
+) {
+    val romano: String get() = numeroRomano(numero)
+    val etichetta: String get() = Testi.legislatura(romano)
+    val conclusa: Boolean get() = fine != null
+
+    /** "2018–2022", "dal 2022"; null se le date non sono note. */
+    val periodo: String?
+        get() {
+            val da = inizio?.take(4) ?: return null
+            return if (fine != null) "$da–${fine.take(4)}" else Testi.dal(da)
+        }
+
+    companion object {
+        private val CIFRE = listOf(
+            1000 to "M", 900 to "CM", 500 to "D", 400 to "CD", 100 to "C", 90 to "XC",
+            50 to "L", 40 to "XL", 10 to "X", 9 to "IX", 5 to "V", 4 to "IV", 1 to "I",
+        )
+
+        /** 19 → "XIX". */
+        fun numeroRomano(n: Int): String {
+            var resto = n
+            return buildString {
+                for ((valore, simbolo) in CIFRE) {
+                    while (resto >= valore) {
+                        append(simbolo)
+                        resto -= valore
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Serializable
 data class Parlamentare(
     val uri: String,

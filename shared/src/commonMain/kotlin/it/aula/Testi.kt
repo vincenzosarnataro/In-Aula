@@ -31,12 +31,19 @@ object Testi {
     const val aula = "Aula"
     const val parlamentari = "Parlamentari"
     const val gruppi = "Gruppi"
+    const val governo = "Governo"
 
     const val tema = "Tema"
     const val temaSistema = "Come il sistema"
     const val temaChiaro = "Chiaro"
     const val temaScuro = "Scuro"
     fun temaAttuale(etichetta: String) = "Tema: ${etichetta.lowercase()}"
+
+    const val sceltaLegislatura = "Legislatura"
+    fun legislatura(romano: String) = "$romano legislatura"
+    fun legislaturaAttuale(romano: String) = "Legislatura: $romano"
+    fun dal(data: String) = "dal $data"
+    fun dalAl(dal: String, al: String) = "dal $dal al $al"
 
     // ---------------------------------------------------------------- Modello
 
@@ -154,11 +161,13 @@ object Testi {
 
     const val cercaParlamentari = "Cerca per nome o gruppo"
     fun inCarica(n: Int) = "$n in carica"
+    fun aFineLegislatura(n: Int) = "$n a fine legislatura"
+    fun membriInElenco(n: Int, conclusa: Boolean) = if (conclusa) aFineLegislatura(n) else inCarica(n)
     fun hannoCambiatoGruppo(n: Int) = "Hanno cambiato gruppo · $n"
     fun cambiDiGruppo(n: Int) = if (n == 1) "1 cambio di gruppo" else "$n cambi di gruppo"
     fun attesaParlamentari(ramo: Ramo) = when (ramo) {
-        Ramo.SENATO -> "Carico i senatori in carica…"
-        Ramo.CAMERA -> "Carico i deputati in carica…"
+        Ramo.SENATO -> "Carico i senatori…"
+        Ramo.CAMERA -> "Carico i deputati…"
     }
 
     // ---------------------------------------------------------------- Gruppi parlamentari
@@ -175,6 +184,8 @@ object Testi {
     fun membri(n: Int) = "Membri · $n"
     fun membriConCambi(n: Int) = if (n == 1) "1 membro ha cambiato gruppo in questa legislatura" else "$n membri hanno cambiato gruppo in questa legislatura"
     const val notaGruppi = "Composizione calcolata sui parlamentari in carica."
+    const val notaGruppiConclusa = "Composizione calcolata sui parlamentari a fine legislatura."
+    fun notaGruppi(conclusa: Boolean) = if (conclusa) notaGruppiConclusa else notaGruppi
 
     // ---------------------------------------------------------------- Scheda parlamentare
 
@@ -205,6 +216,18 @@ object Testi {
         1 -> "Gruppi · 1 cambio in questa legislatura"
         else -> "Gruppi · $cambi cambi in questa legislatura"
     }
+
+    // ---------------------------------------------------------------- Governo
+
+    const val presidenteDelConsiglio = "Presidente del Consiglio"
+    const val vicepresidenti = "Vicepresidenti del Consiglio"
+    fun ministri(n: Int) = "Ministri · $n"
+    fun ministriSenzaPortafoglio(n: Int) = "Ministri senza portafoglio · $n"
+    fun avvicendamenti(n: Int) = "Hanno lasciato il governo · $n"
+    const val adInterim = "ad interim"
+    const val attesaGoverno = "Carico la composizione del governo…"
+    const val nessunGoverno = "Nessun governo negli open data per questa legislatura."
+    const val notaGoverno = "Fonte: Camera dei deputati. Tocca chi è deputato per aprirne la scheda."
 
     // ---------------------------------------------------------------- Scheda atto
 

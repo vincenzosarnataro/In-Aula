@@ -26,10 +26,14 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.graphics.toArgb
 import it.aula.Testi
 import it.aula.android.ui.LocalPreferenzaTema
+import it.aula.android.ui.LocalSceltaLegislatura
+import it.aula.android.ui.PreferenzaLegislatura
 import it.aula.android.ui.PreferenzaTema
+import it.aula.android.ui.SceltaLegislatura
 import it.aula.android.ui.sfondoTema
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.HowToVote
 import androidx.compose.material.icons.outlined.PieChart
@@ -45,6 +49,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -57,6 +62,7 @@ import androidx.navigation3.ui.NavDisplay
 import it.aula.AppGraph
 import it.aula.android.ui.AulaScreen
 import it.aula.android.ui.AulaTheme
+import it.aula.android.ui.GovernoScreen
 import it.aula.android.ui.GruppiScreen
 import it.aula.android.ui.GruppoScreen
 import it.aula.android.ui.ParlamentareScreen
@@ -71,6 +77,7 @@ import it.aula.model.Ramo
 import it.aula.model.Votazione
 import it.aula.model.VotoIndividuale
 import it.aula.presentation.AulaStore
+import it.aula.presentation.GovernoStore
 import it.aula.presentation.GruppiStore
 import it.aula.presentation.ParlamentariStore
 import kotlinx.serialization.Serializable
@@ -78,10 +85,12 @@ import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     private val preferenzaTema by lazy { PreferenzaTema(this) }
+    private val preferenzaLegislatura by lazy { PreferenzaLegislatura(this) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppGraph.logChiamate = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+        AppGraph.ripristinaLegislatura(preferenzaLegislatura.salvata)
         enableEdgeToEdge()
         setContent {
             val scuro = preferenzaTema.scelta.scuro(isSystemInDarkTheme())
@@ -96,7 +105,7 @@ class MainActivity : ComponentActivity() {
                 onDispose {}
             }
             CompositionLocalProvider(LocalPreferenzaTema provides preferenzaTema) {
-                AulaTheme(scuro) { AulaApp() }
+                AulaTheme(scuro) { AulaApp(preferenzaLegislatura) }
             }
         }
     }
@@ -110,7 +119,7 @@ class MainActivity : ComponentActivity() {
 
 // ---------------------------------------------------------------- Destinazioni
 
-/** Schermata principale con le tab Aula, Parlamentari e Gruppi. */
+/** Schermata principale con le tab Aula, Parlamentari, Gruppi e Governo. */
 @Serializable
 private data object Home : NavKey
 
@@ -132,6 +141,7 @@ private enum class Tab(val titolo: String, val icona: ImageVector) {
     AULA(Testi.aula, Icons.Outlined.HowToVote),
     PARLAMENTARI(Testi.parlamentari, Icons.Outlined.Groups),
     GRUPPI(Testi.gruppi, Icons.Outlined.PieChart),
+    GOVERNO(Testi.governo, Icons.Outlined.AccountBalance),
 }
 
 // ---------------------------------------------------------------- Navigazione
@@ -159,7 +169,7 @@ fun createMaterialTransition(forward: Boolean, motionScheme: MotionScheme): Cont
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun AulaApp() {
+private fun AulaApp(preferenzaLegislatura: PreferenzaLegislatura) {
     // Back stack di Navigation 3: serializzabile, sopravvive a rotazioni e process death.
     val backStack = rememberNavBackStack(Home)
     val indietro: () -> Unit = { if (backStack.size > 1) backStack.removeLastOrNull() }
@@ -169,6 +179,9 @@ private fun AulaApp() {
     val aulaStore = rememberTabStore("aula") { AppGraph.aulaStore() }
     val parlamentariStore = rememberTabStore("parlamentari") { AppGraph.parlamentariStore() }
     val gruppiStore = rememberTabStore("gruppi") { AppGraph.gruppiStore() }
+    val governoStore = rememberTabStore("governo") { AppGraph.governoStore() }
+    val legislaturaStore = rememberTabStore("legislatura") { AppGraph.legislaturaStore() }
+    val sceltaLegislatura = remember(legislaturaStore) { SceltaLegislatura(legislaturaStore, preferenzaLegislatura) }
     val motion = MaterialTheme.motionScheme
     NavDisplay(
         backStack = backStack,
@@ -187,7 +200,9 @@ private fun AulaApp() {
         predictivePopTransitionSpec = { createMaterialTransition(forward = false, motionScheme = motion) },
         entryProvider = entryProvider {
             entry<Home> {
-                Home(aulaStore, parlamentariStore, gruppiStore, apri = { backStack.add(it) })
+                CompositionLocalProvider(LocalSceltaLegislatura provides sceltaLegislatura) {
+                    Home(aulaStore, parlamentariStore, gruppiStore, governoStore, apri = { backStack.add(it) })
+                }
             }
             entry<DettaglioVotazione> { chiave ->
                 val store = rememberEntryStore { AppGraph.votazioneStore(chiave.votazione) }
@@ -236,6 +251,7 @@ private fun Home(
     aulaStore: AulaStore,
     parlamentariStore: ParlamentariStore,
     gruppiStore: GruppiStore,
+    governoStore: GovernoStore,
     apri: (NavKey) -> Unit,
 ) {
     var tab by rememberSaveable { mutableStateOf(Tab.AULA) }
@@ -275,6 +291,7 @@ private fun Home(
                     )
                 }
                 Tab.GRUPPI -> GruppiScreen(gruppiStore, modifier) { apri(SchedaGruppo(it.ramo, it.nome)) }
+                Tab.GOVERNO -> GovernoScreen(governoStore, modifier) { apri(SchedaParlamentare(it)) }
             }
         }
     }

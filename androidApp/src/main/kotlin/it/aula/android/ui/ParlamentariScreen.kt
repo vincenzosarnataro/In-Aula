@@ -70,11 +70,14 @@ fun ParlamentariContenuto(
         LargeFlexibleTopAppBar(
             title = { Text(Testi.parlamentari) },
             subtitle = if (stato.tutti.isNotEmpty()) {
-                { Text(Testi.inCarica(stato.visibili.size)) }
+                { Text(stato.sottotitolo) }
             } else {
                 null
             },
-            actions = { PulsanteTema() },
+            actions = {
+                PulsanteLegislatura()
+                PulsanteTema()
+            },
             scrollBehavior = scrollBehavior,
         )
         SelettoreRamo(stato.ramo, azioni.selezionaRamo, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))

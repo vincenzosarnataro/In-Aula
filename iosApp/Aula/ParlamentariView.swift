@@ -26,7 +26,7 @@ struct ParlamentariView: View {
                     .tint(Colori.primario)
                     .listRowSeparator(.hidden)
                 }
-                Section(testi.inCarica(n: Int32(stato.visibili.count))) {
+                Section(stato.sottotitolo) {
                     ForEach(stato.visibili, id: \.uri) { p in
                         NavigationLink(value: p) {
                             HStack(spacing: 12) {
@@ -50,7 +50,10 @@ struct ParlamentariView: View {
         }
         .listStyle(.plain)
         .navigationTitle(testi.parlamentari)
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { PulsanteTema() } }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) { PulsanteLegislatura() }
+            ToolbarItem(placement: .topBarTrailing) { PulsanteTema() }
+        }
         .searchable(
             text: Binding(get: { stato.ricerca }, set: { store.cerca(testo: $0) }),
             prompt: testi.cercaParlamentari

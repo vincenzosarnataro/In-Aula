@@ -20,14 +20,13 @@ PREFIX dc: <http://purl.org/dc/elements/1.1/>
 
     private fun leg(n: Int) = "<http://dati.camera.it/ocd/legislatura.rdf/repubblica_$n>"
 
-    val legislaturaCorrente = """
+    /** Le legislature repubblicane. dc:date vale "YYYYMMDD-YYYYMMDD", o "YYYYMMDD" per quella in corso. */
+    val legislature = """
 $PREFISSI
-SELECT ?s WHERE {
+SELECT DISTINCT ?s ?d WHERE {
   ?s a ocd:legislatura ; dc:date ?d .
   FILTER(CONTAINS(STR(?s), "repubblica_"))
 }
-ORDER BY DESC(?d)
-LIMIT 1
 """
 
     /** Variabili di una votazione: le stesse per la lista, le sedute e le schede degli atti. */
@@ -142,7 +141,11 @@ WHERE {
 LIMIT 1000
 """
 
-    fun deputatiInCarica(legislatura: Int) = """
+    /**
+     * Deputati in carica o, per una legislatura conclusa ([fine] `YYYYMMDD`), quelli il cui
+     * mandato è durato fino allo scioglimento: i sostituiti in corsa restano fuori.
+     */
+    fun deputatiInCarica(legislatura: Int, fine: String? = null) = """
 $PREFISSI
 SELECT DISTINCT ?s ?nome ?cognome ?foto
 WHERE {
@@ -150,7 +153,7 @@ WHERE {
      foaf:firstName ?nome ; foaf:surname ?cognome ; ocd:rif_mandatoCamera ?m .
   OPTIONAL { ?m ocd:endDate ?fine }
   OPTIONAL { ?s foaf:depiction ?foto }
-  FILTER(!BOUND(?fine))
+  FILTER(!BOUND(?fine)${fine?.let { " || STR(?fine) >= \"$it\"" }.orEmpty()})
 }
 ORDER BY ?cognome ?nome
 """
@@ -196,6 +199,37 @@ SELECT ?descr ?scheda ?nascita ?luogo ?prov ?collegio ?lista ?tipo WHERE {
   }
 }
 LIMIT 1
+"""
+
+    /** Governi di una legislatura. dc:date vale "YYYYMMDD-YYYYMMDD", o "YYYYMMDD" per quello in carica. */
+    fun governi(legislatura: Int) = """
+$PREFISSI
+SELECT DISTINCT ?g ?titolo ?d WHERE {
+  ?g a ocd:governo ; ocd:rif_leg ${leg(legislatura)} ; dc:title ?titolo ; dc:date ?d .
+}
+"""
+
+    /**
+     * Presidente, vicepresidenti e ministri di un governo, anche quelli che hanno lasciato prima
+     * della fine (hanno ocd:endDate; chi resta fino alla fine no). Chi è deputato nella
+     * legislatura si aggancia alla scheda, con la foto, attraverso il mandato della persona.
+     */
+    fun membriGoverno(governoUri: String, legislatura: Int) = """
+$PREFISSI
+SELECT DISTINCT ?m ?ruolo ?incarico ?delega ?nome ?cognome ?inizio ?fine ?interim ?dep ?foto WHERE {
+  <$governoUri> ocd:rif_membroGoverno ?m .
+  ?m ocd:membroGoverno ?ruolo ; dc:title ?incarico ; foaf:firstName ?nome ; foaf:surname ?cognome .
+  FILTER(STR(?ruolo) IN ("PRESIDENTE DEL CONSIGLIO", "VICEPRESIDENTE DEL CONSIGLIO", "MINISTRO", "MINISTRO SENZA PORTAFOGLIO"))
+  OPTIONAL { ?m ocd:startDate ?inizio }
+  OPTIONAL { ?m ocd:endDate ?fine }
+  OPTIONAL { ?m ocd:interim ?interim }
+  OPTIONAL { ?m dc:description ?delega }
+  OPTIONAL {
+    ?m ocd:rif_persona ?p . ?p ocd:rif_mandatoCamera ?mc .
+    ?dep a ocd:deputato ; ocd:rif_leg ${leg(legislatura)} ; ocd:rif_mandatoCamera ?mc .
+    OPTIONAL { ?dep foaf:depiction ?foto }
+  }
+}
 """
 
     fun presenze(deputatoUri: String) = """
@@ -395,8 +429,9 @@ SELECT DISTINCT ?sen ?gruppo WHERE {
      * Senza foaf:depiction: le foto del Senato non sono scaricabili dall'app (vedi
      * ParlamentoRepository.parlamentare). Solo mandati al Senato: gli ex senatori oggi deputati
      * hanno nella stessa legislatura un mandato alla Camera, che altrimenti li farebbe contare.
+     * Per una legislatura conclusa ([fine] `YYYY-MM-DD`) vale il mandato durato fino allo scioglimento.
      */
-    fun senatoriInCarica(legislatura: Int) = """
+    fun senatoriInCarica(legislatura: Int, fine: String? = null) = """
 PREFIX osr: <http://dati.senato.it/osr/>
 PREFIX ocd: <http://dati.camera.it/ocd/>
 PREFIX foaf: <http://xmlns.com/foaf/0.1/>
@@ -404,7 +439,7 @@ SELECT DISTINCT ?s ?nome ?cognome WHERE {
   ?s a osr:Senatore ; foaf:firstName ?nome ; foaf:lastName ?cognome ; osr:mandato ?m .
   ?m a ocd:mandatoSenato ; osr:legislatura $legislatura .
   OPTIONAL { ?m osr:fine ?fine }
-  FILTER(!BOUND(?fine))
+  FILTER(!BOUND(?fine)${fine?.let { " || STR(?fine) >= \"$it\"" }.orEmpty()})
 }
 ORDER BY ?cognome ?nome
 """
