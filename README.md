@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/media/icona.png" width="128" alt="Icona dell'app In Aula: emiciclo di seggi bianchi su fondo blu">
+<img src="docs/media/copertina.png" width="1024" alt="Icona dell'app In Aula: emiciclo di seggi bianchi su fondo blu">
 
 # In Aula
 
